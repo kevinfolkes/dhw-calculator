@@ -1,0 +1,305 @@
+/**
+ * Per-system auto-sizing. For each system type, produces three sizing
+ * philosophies:
+ *   - minimum:    smallest equipment that passes code + demand
+ *   - recommended: ASHRAE/industry standard with 20-25% safety margin
+ *   - lifecycle:   optimized for 15-year total cost (capital + energy)
+ *
+ * Ported from the original artifact's `autoSize()` closure.
+ */
+import {
+  CENTRAL_ELEC_KW, CENTRAL_GAS_INPUT_MBH, CENTRAL_HPWH_KW, CENTRAL_TANK_SIZES,
+  GAS_TANKLESS_WH, GAS_TANK_WH, HPWH_TANK_FHR,
+  type ApartmentDemand,
+  type GasTankSize, type GasTanklessInput, type HPWHTankSize,
+} from "@/lib/engineering/constants";
+import type { SystemTypeKey } from "@/lib/engineering/system-types";
+import type { DhwInputs } from "@/lib/calc/inputs";
+import type { AutoSizeResult, SizingRec } from "@/lib/calc/types";
+import { installedCost, type InstalledCostParams } from "./cost-models";
+
+export interface AutoSizeContext {
+  input: DhwInputs;
+  ashraeProfile: ApartmentDemand;
+  peakHourDemand: number;
+  storageCoef: number;
+  usableFraction: number;
+  storageVolGal_nominal: number;
+  totalBTUH: number;
+  totalKW: number;
+  hpwhNameplateKW: number;
+  annualTotalBTU: number;
+  annualCOP: number;
+  inUnitAnnualDHWBTU_total: number;
+  totalHeatingAnnualBTU: number;
+  seasonalCOP_heating: number;
+  needsFullResistanceBackup: boolean;
+  heatingLoad_0BR: number;
+  heatingLoad_1BR: number;
+  heatingLoad_2BR: number;
+  heatingLoad_3BR: number;
+  combiCOP_heating: number;
+  tanklessPeakGPM: number;
+  totalUnits: number;
+}
+
+export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
+  const { input, totalUnits } = ctx;
+  const st = input.systemType;
+
+  const annualCostForSize = (params: InstalledCostParams) => annualCostForSizeImpl(ctx, params);
+  const ic = (params: InstalledCostParams) => installedCost(st, params, totalUnits);
+
+  // ---------- CENTRAL ----------
+  if (st === "central_gas" || st === "central_resistance" || st === "central_hpwh") {
+    const minStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction / 50) * 50;
+    const recStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction * 1.25 / 50) * 50;
+
+    const minTank = CENTRAL_TANK_SIZES.find(s => s >= minStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const recTank = CENTRAL_TANK_SIZES.find(s => s >= recStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+
+    const reqOutputMBH = ctx.totalBTUH / 1000;
+    const reqOutputKW = ctx.totalKW;
+
+    let minCap: number, recCap: number, minCapUnit: string, recCapUnit: string;
+    if (st === "central_gas") {
+      const minInputMBH = reqOutputMBH / input.gasEfficiency;
+      const recInputMBH = minInputMBH * 1.25;
+      minCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= minInputMBH) ?? CENTRAL_GAS_INPUT_MBH[CENTRAL_GAS_INPUT_MBH.length - 1];
+      recCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= recInputMBH) ?? CENTRAL_GAS_INPUT_MBH[CENTRAL_GAS_INPUT_MBH.length - 1];
+      minCapUnit = recCapUnit = "MBH input";
+    } else if (st === "central_resistance") {
+      minCap = CENTRAL_ELEC_KW.find(k => k >= reqOutputKW) ?? CENTRAL_ELEC_KW[CENTRAL_ELEC_KW.length - 1];
+      recCap = CENTRAL_ELEC_KW.find(k => k >= reqOutputKW * 1.20) ?? CENTRAL_ELEC_KW[CENTRAL_ELEC_KW.length - 1];
+      minCapUnit = recCapUnit = "kW";
+    } else {
+      const minKW = ctx.hpwhNameplateKW;
+      const recKW = ctx.hpwhNameplateKW * 1.25;
+      minCap = CENTRAL_HPWH_KW.find(k => k >= minKW) ?? CENTRAL_HPWH_KW[CENTRAL_HPWH_KW.length - 1];
+      recCap = CENTRAL_HPWH_KW.find(k => k >= recKW) ?? CENTRAL_HPWH_KW[CENTRAL_HPWH_KW.length - 1];
+      minCapUnit = recCapUnit = "kW nameplate";
+    }
+
+    // Lifecycle: find tank × cap combo with lowest 15-year total
+    let best: (SizingRec & { tank: number; cap: number; capUnit: string }) | null = null;
+    for (const tank of CENTRAL_TANK_SIZES) {
+      if (tank < minTank) continue;
+      if (tank > recTank * 2) continue;
+      const size: InstalledCostParams = { storageGal: tank, kW: recCap, inputMBH: recCap };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) {
+        best = { tank, cap: recCap, capUnit: minCapUnit, capCost, annCost, total15 };
+      }
+    }
+
+    const minSize: InstalledCostParams = { storageGal: minTank, kW: minCap, inputMBH: minCap };
+    const recSize: InstalledCostParams = { storageGal: recTank, kW: recCap, inputMBH: recCap };
+
+    return {
+      system: st,
+      minimum: { tank: minTank, cap: minCap, capUnit: minCapUnit, capCost: ic(minSize), annCost: annualCostForSize(minSize) },
+      recommended: { tank: recTank, cap: recCap, capUnit: recCapUnit, capCost: ic(recSize), annCost: annualCostForSize(recSize) },
+      lifecycle: best,
+      reqPeakHourGPH: ctx.peakHourDemand,
+      reqOutputMBH,
+      reqOutputKW,
+    };
+  }
+
+  // ---------- IN-UNIT GAS TANK (DHW-only) and GAS COMBI ----------
+  if (st === "inunit_gas_tank" || st === "inunit_combi_gas") {
+    const reqFHR = ctx.ashraeProfile.mh;
+    const sizes = Object.keys(GAS_TANK_WH).map(Number).sort((a, b) => a - b) as GasTankSize[];
+
+    // For combi, the tank must also cover the worst per-unit heating input
+    // demand. Convert BTU/hr → equivalent DHW FHR by asking: "what minimum
+    // input MBH covers the worst heating load?" and constrain size to a tank
+    // whose input meets it (heating loop continuous, DHW priority).
+    const worstHeating = Math.max(ctx.heatingLoad_0BR, ctx.heatingLoad_1BR, ctx.heatingLoad_2BR, ctx.heatingLoad_3BR);
+
+    const findTank = (type: "atmospheric" | "condensing", margin: number): GasTankSize => {
+      for (const s of sizes) {
+        const fhr = type === "condensing" ? GAS_TANK_WH[s].fhr_condensing : GAS_TANK_WH[s].fhr_atmospheric;
+        if (fhr < reqFHR * margin) continue;
+        if (st === "inunit_combi_gas") {
+          const uef = type === "condensing" ? GAS_TANK_WH[s].uef_cond : GAS_TANK_WH[s].uef_atmos;
+          const outputBTUH = GAS_TANK_WH[s].input_mbh * uef * 1000;
+          if (outputBTUH < worstHeating * margin) continue;
+        }
+        return s;
+      }
+      return sizes[sizes.length - 1];
+    };
+    const minTank_cond = findTank("condensing", 1.0);
+    const recTank_cond = findTank("condensing", 1.15);
+
+    const meetsCombi = (s: GasTankSize, subtype: "atmospheric" | "condensing") => {
+      if (st !== "inunit_combi_gas") return true;
+      const uef = subtype === "condensing" ? GAS_TANK_WH[s].uef_cond : GAS_TANK_WH[s].uef_atmos;
+      return GAS_TANK_WH[s].input_mbh * uef * 1000 >= worstHeating;
+    };
+
+    let best: (SizingRec & { tankGal: number; subtype: "atmospheric" | "condensing" }) | null = null;
+    for (const s of sizes) {
+      if (GAS_TANK_WH[s].fhr_condensing >= reqFHR && meetsCombi(s, "condensing")) {
+        const size: InstalledCostParams = { tankGal: s, subtype: "condensing" };
+        const capCost = ic(size);
+        const annCost = annualCostForSize(size);
+        const total15 = capCost + annCost * 15;
+        if (!best || total15 < best.total15!) best = { tankGal: s, subtype: "condensing", capCost, annCost, total15 };
+      }
+      if (s < 50 && GAS_TANK_WH[s].fhr_atmospheric >= reqFHR && meetsCombi(s, "atmospheric")) {
+        const size: InstalledCostParams = { tankGal: s, subtype: "atmospheric" };
+        const capCost = ic(size);
+        const annCost = annualCostForSize(size);
+        const total15 = capCost + annCost * 15;
+        if (best && total15 < best.total15!) best = { tankGal: s, subtype: "atmospheric", capCost, annCost, total15 };
+      }
+    }
+
+    return {
+      system: st,
+      reqFHR,
+      minimum: { tankGal: minTank_cond, subtype: "condensing", capCost: ic({ tankGal: minTank_cond, subtype: "condensing" }), annCost: annualCostForSize({ tankGal: minTank_cond, subtype: "condensing" }) },
+      recommended: { tankGal: recTank_cond, subtype: "condensing", capCost: ic({ tankGal: recTank_cond, subtype: "condensing" }), annCost: annualCostForSize({ tankGal: recTank_cond, subtype: "condensing" }) },
+      lifecycle: best,
+    };
+  }
+
+  // ---------- IN-UNIT GAS TANKLESS ----------
+  if (st === "inunit_gas_tankless") {
+    const reqBTUH = ctx.tanklessPeakGPM * 500 * input.tanklessDesignRiseF;
+    const reqInputMBH = reqBTUH / 1000 / 0.85;
+    const sizes = Object.keys(GAS_TANKLESS_WH).map(Number).sort((a, b) => a - b) as GasTanklessInput[];
+
+    const findInput = (margin: number): GasTanklessInput =>
+      sizes.find(s => {
+        const capacity = (GAS_TANKLESS_WH[s].input_mbh * GAS_TANKLESS_WH[s].uef * 1000) / (500 * input.tanklessDesignRiseF);
+        return capacity >= ctx.tanklessPeakGPM * margin;
+      }) ?? sizes[sizes.length - 1];
+
+    const minInput = findInput(1.0);
+    const recInput = findInput(1.15);
+
+    let best: (SizingRec & { inputMBH: number }) | null = null;
+    for (const s of sizes) {
+      const cap = (GAS_TANKLESS_WH[s].input_mbh * GAS_TANKLESS_WH[s].uef * 1000) / (500 * input.tanklessDesignRiseF);
+      if (cap < ctx.tanklessPeakGPM) continue;
+      const size: InstalledCostParams = { inputMBH: s };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) best = { inputMBH: s, capCost, annCost, total15 };
+    }
+
+    return {
+      system: st,
+      reqPeakGPM: ctx.tanklessPeakGPM,
+      reqInputMBH_derated: reqInputMBH,
+      minimum: { inputMBH: minInput, capCost: ic({ inputMBH: minInput }), annCost: annualCostForSize({ inputMBH: minInput }) },
+      recommended: { inputMBH: recInput, capCost: ic({ inputMBH: recInput }), annCost: annualCostForSize({ inputMBH: recInput }) },
+      lifecycle: best,
+    };
+  }
+
+  // ---------- IN-UNIT HPWH / COMBI ----------
+  if (st === "inunit_hpwh" || st === "inunit_combi") {
+    const reqFHR = ctx.ashraeProfile.mh;
+    const sizes = Object.keys(HPWH_TANK_FHR).map(Number).sort((a, b) => a - b) as HPWHTankSize[];
+    const worstHeatingLoad = Math.max(ctx.heatingLoad_0BR, ctx.heatingLoad_1BR, ctx.heatingLoad_2BR, ctx.heatingLoad_3BR);
+
+    const findTank = (margin: number): HPWHTankSize => {
+      for (const s of sizes) {
+        const fhr = HPWH_TANK_FHR[s].fhr;
+        if (fhr >= reqFHR * margin) {
+          if (st === "inunit_combi") {
+            const compressorBTUH = HPWH_TANK_FHR[s].input_kw * 3412 * ctx.combiCOP_heating;
+            const resistanceNeeded = Math.max(0, (worstHeatingLoad - compressorBTUH) / 3412);
+            if (margin >= 1.15 && resistanceNeeded > 3) continue;
+          }
+          return s;
+        }
+      }
+      return sizes[sizes.length - 1];
+    };
+
+    const minTank = findTank(1.0);
+    const recTank = findTank(1.15);
+
+    let best: (SizingRec & { tankGal: number }) | null = null;
+    for (const s of sizes) {
+      if (HPWH_TANK_FHR[s].fhr < reqFHR) continue;
+      const size: InstalledCostParams = { tankGal: s };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) best = { tankGal: s, capCost, annCost, total15 };
+    }
+
+    return {
+      system: st,
+      reqFHR,
+      worstHeatingLoad: st === "inunit_combi" ? worstHeatingLoad : null,
+      minimum: { tankGal: minTank, capCost: ic({ tankGal: minTank }), annCost: annualCostForSize({ tankGal: minTank }) },
+      recommended: { tankGal: recTank, capCost: ic({ tankGal: recTank }), annCost: annualCostForSize({ tankGal: recTank }) },
+      lifecycle: best,
+    };
+  }
+
+  return null;
+}
+
+// Annual operating cost (USD/year) for a candidate equipment size.
+function annualCostForSizeImpl(ctx: AutoSizeContext, size: InstalledCostParams): number {
+  const { input } = ctx;
+  const st = input.systemType;
+
+  if (st === "central_gas") {
+    return (ctx.annualTotalBTU / (input.gasEfficiency * 100000)) * input.gasRate;
+  }
+  if (st === "central_resistance") {
+    return (ctx.annualTotalBTU / 3412) * input.elecRate;
+  }
+  if (st === "central_hpwh") {
+    const storageGal = size.storageGal ?? ctx.storageVolGal_nominal;
+    const sizeCOP = ctx.annualCOP * (1 + Math.min(0.05, (storageGal - ctx.storageVolGal_nominal) / 10000));
+    return ((ctx.annualTotalBTU / 3412) / sizeCOP) * input.elecRate;
+  }
+  if (st === "inunit_gas_tank") {
+    const tankGal = size.tankGal as GasTankSize;
+    const uef = size.subtype === "condensing" ? GAS_TANK_WH[tankGal].uef_cond : GAS_TANK_WH[tankGal].uef_atmos;
+    return (ctx.inUnitAnnualDHWBTU_total / (uef * 100000)) * input.gasRate;
+  }
+  if (st === "inunit_combi_gas") {
+    const tankGal = size.tankGal as GasTankSize;
+    const uef = size.subtype === "condensing" ? GAS_TANK_WH[tankGal].uef_cond : GAS_TANK_WH[tankGal].uef_atmos;
+    const dhwTherms = ctx.inUnitAnnualDHWBTU_total / (uef * 100000);
+    const heatTherms = ctx.totalHeatingAnnualBTU / (uef * 100000);
+    return (dhwTherms + heatTherms) * input.gasRate;
+  }
+  if (st === "inunit_gas_tankless") {
+    const uef = GAS_TANKLESS_WH[size.inputMBH as GasTanklessInput].uef;
+    return (ctx.inUnitAnnualDHWBTU_total / (uef * 100000)) * input.gasRate;
+  }
+  if (st === "inunit_hpwh") {
+    const uefEff = HPWH_TANK_FHR[size.tankGal as HPWHTankSize].uef;
+    return ((ctx.inUnitAnnualDHWBTU_total / 3412) / uefEff) * input.elecRate;
+  }
+  if (st === "inunit_combi") {
+    const tankGal = size.tankGal as HPWHTankSize;
+    const uefEff = HPWH_TANK_FHR[tankGal].uef;
+    const dhwKWh = (ctx.inUnitAnnualDHWBTU_total / 3412) / uefEff;
+    const sizeAdjustedShare = Math.max(
+      0.02,
+      ctx.needsFullResistanceBackup ? 0.20 - (tankGal - 50) * 0.001 : 0.05,
+    );
+    const heatKWh =
+      (ctx.totalHeatingAnnualBTU * (1 - sizeAdjustedShare) / ctx.seasonalCOP_heating +
+        ctx.totalHeatingAnnualBTU * sizeAdjustedShare) /
+      3412;
+    return (dhwKWh + heatKWh) * input.elecRate;
+  }
+  return 0;
+}

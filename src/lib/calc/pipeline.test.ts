@@ -1,0 +1,73 @@
+import { describe, it, expect } from "vitest";
+import { runCalc } from "./pipeline";
+import { DEFAULT_INPUTS } from "./inputs";
+
+describe("runCalc (integration)", () => {
+  it("returns a 12-month monthly array summing to annual rollup", () => {
+    const r = runCalc(DEFAULT_INPUTS);
+    expect(r.monthly.monthly.length).toBe(12);
+    const sum = r.monthly.monthly.reduce((s, m) => s + m.totalEnergy, 0);
+    expect(sum).toBeCloseTo(r.monthly.monthlyAnnualEnergy, 0);
+  });
+
+  it("reports required recovery BTU/hr higher than peak-draw BTU/hr (includes recirc)", () => {
+    const r = runCalc(DEFAULT_INPUTS);
+    expect(r.totalBTUH).toBeGreaterThan(r.recoveryBTUH);
+  });
+
+  it("HPWH annual energy is lower than resistance for the same load", () => {
+    const r = runCalc(DEFAULT_INPUTS);
+    expect(r.annualHPWHKWh_total).toBeLessThan(r.annualResistanceKWh);
+  });
+
+  it("switching to central_gas produces therms, not kWh", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    expect(r.monthly.monthlyUnit).toBe("therms");
+  });
+
+  it("in-unit combi produces both heating and DHW energy", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "inunit_combi" });
+    const heat = r.monthly.monthly.reduce((s, m) => s + m.heatingEnergy, 0);
+    const dhw = r.monthly.monthly.reduce((s, m) => s + m.dhwEnergy, 0);
+    expect(heat).toBeGreaterThan(0);
+    expect(dhw).toBeGreaterThan(0);
+  });
+
+  it("auto-size returns a recommended size for every supported system type", () => {
+    const systems = [
+      "central_gas", "central_resistance", "central_hpwh",
+      "inunit_gas_tank", "inunit_gas_tankless", "inunit_hpwh",
+      "inunit_combi", "inunit_combi_gas",
+    ] as const;
+    for (const sys of systems) {
+      const r = runCalc({ ...DEFAULT_INPUTS, systemType: sys });
+      expect(r.autoSize).not.toBeNull();
+      expect(r.autoSize!.recommended).toBeDefined();
+    }
+  });
+
+  it("inunit_combi_gas produces therms with both DHW and heating components", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "inunit_combi_gas" });
+    expect(r.monthly.monthlyUnit).toBe("therms");
+    expect(r.monthly.monthlyAnnualDHW).toBeGreaterThan(0);
+    expect(r.monthly.monthlyAnnualHeating).toBeGreaterThan(0);
+  });
+
+  it("per-apartment monthly DHW equals building DHW / totalUnits for in-unit systems", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "inunit_hpwh" });
+    const jan = r.monthly.monthly[0];
+    const expected = jan.dhwEnergy / r.totalUnits;
+    expect(jan.dhwPerApt).toBeCloseTo(expected, 0);
+  });
+
+  it("flags Legionella warning when storage <140°F", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, storageSetpointF: 130 });
+    const has = r.flags.some(f => f.code.includes("188-2021") && f.msg.includes("Legionella"));
+    expect(has).toBe(true);
+  });
+
+  it("peak-hour demand is never negative", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, units1BR: 0, units2BR: 0, units3BR: 0 });
+    expect(r.peakHourDemand).toBeGreaterThanOrEqual(0);
+  });
+});
