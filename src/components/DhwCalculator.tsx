@@ -171,27 +171,63 @@ export default function DhwCalculator() {
     }
   };
 
+  const SIDEBAR_WIDTH = 232;
+
   return (
-    <div style={{ minHeight: "100vh", background: "var(--background)" }}>
-      <nav
+    <div style={{ minHeight: "100vh", background: "var(--background)", display: "flex" }}>
+      {/* LEFT SIDEBAR ─────────────────────────────────────────────────── */}
+      <aside
         style={{
+          width: SIDEBAR_WIDTH,
+          minWidth: SIDEBAR_WIDTH,
           background: "#0F1E40",
           color: "rgba(255,255,255,0.85)",
-          height: 58,
+          position: "sticky",
+          top: 0,
+          alignSelf: "flex-start",
+          height: "100vh",
           display: "flex",
-          alignItems: "center",
-          padding: "0 24px",
-          gap: 32,
+          flexDirection: "column",
+          borderRight: "1px solid rgba(255,255,255,0.06)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 20 }}>💧</span>
-          <div style={{ fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "-0.01em" }}>
-            DHW Sizing Calculator
+        {/* Brand header */}
+        <div
+          style={{
+            padding: "18px 18px 14px",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <span style={{ fontSize: 22 }}>💧</span>
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: 14,
+              color: "#fff",
+              letterSpacing: "-0.01em",
+              lineHeight: 1.25,
+            }}
+          >
+            DHW Sizing
+            <br />
+            Calculator
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 4, marginLeft: 16, flex: 1, flexWrap: "wrap" }}>
+        {/* Nav list */}
+        <nav
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "10px 8px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
           {tabs.map((item, i) => {
             const Icon = item.icon;
             const isActive = tab === item.id;
@@ -202,46 +238,126 @@ export default function DhwCalculator() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  padding: "6px 12px",
-                  borderRadius: 9,
+                  gap: 10,
+                  padding: "8px 10px",
+                  borderRadius: 8,
                   border: "none",
                   cursor: "pointer",
-                  background: isActive ? "rgba(255,255,255,0.15)" : "transparent",
-                  color: isActive ? "#fff" : "rgba(255,255,255,0.55)",
-                  fontSize: 12,
+                  background: isActive ? "rgba(255,255,255,0.10)" : "transparent",
+                  color: isActive ? "#fff" : "rgba(255,255,255,0.60)",
+                  fontSize: 12.5,
                   fontWeight: isActive ? 700 : 500,
+                  textAlign: "left",
+                  transition: "background 120ms ease, color 120ms ease",
+                  position: "relative",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                    e.currentTarget.style.color = "rgba(255,255,255,0.85)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "rgba(255,255,255,0.60)";
+                  }
                 }}
               >
+                {isActive && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 6,
+                      bottom: 6,
+                      width: 3,
+                      background: "#7DD3A3",
+                      borderRadius: "0 3px 3px 0",
+                    }}
+                  />
+                )}
                 <span
                   style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: "50%",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                    color: isActive ? "rgba(125,211,163,0.9)" : "rgba(255,255,255,0.35)",
+                    letterSpacing: "0.08em",
+                    width: 18,
+                    flexShrink: 0,
+                  }}
+                >
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 6,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    background: isActive ? "rgba(5,150,105,0.5)" : "rgba(255,255,255,0.1)",
+                    background: isActive
+                      ? "rgba(125,211,163,0.18)"
+                      : "rgba(255,255,255,0.06)",
+                    flexShrink: 0,
                   }}
                 >
-                  <Icon size={12} />
+                  <Icon size={13} />
                 </span>
-                {item.label}
-                <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 500, marginLeft: 4 }}>
-                  {i + 1}
+                <span
+                  style={{
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {item.label}
                 </span>
               </button>
             );
           })}
-        </div>
+        </nav>
 
-        <div style={{ marginLeft: "auto", fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
-          {sys.short} · {result.totalUnits} units
+        {/* Footer: system summary */}
+        <div
+          style={{
+            padding: "14px 18px",
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+            fontSize: 11,
+            lineHeight: 1.5,
+          }}
+        >
+          <div
+            style={{
+              color: "rgba(255,255,255,0.45)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              fontSize: 9.5,
+              fontWeight: 700,
+              marginBottom: 4,
+            }}
+          >
+            Current config
+          </div>
+          <div style={{ color: "rgba(255,255,255,0.92)", fontWeight: 600 }}>{sys.short}</div>
+          <div style={{ color: "rgba(255,255,255,0.55)" }}>
+            {result.totalUnits} {result.totalUnits === 1 ? "unit" : "units"} ·{" "}
+            {result.totalOccupants.toFixed(0)} occ
+          </div>
         </div>
-      </nav>
+      </aside>
 
+      {/* MAIN CONTENT ─────────────────────────────────────────────────── */}
       <main
-        style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 48px" }}
+        style={{
+          flex: 1,
+          minWidth: 0, // allow flex child to shrink below content width
+          padding: "24px 32px 48px",
+          maxWidth: 1280,
+        }}
         className="animate-fade-in"
         key={tab}
       >
