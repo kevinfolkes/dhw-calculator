@@ -15,6 +15,7 @@ import {
   GAS_TANKLESS_WH,
   GRID_EF,
   HPWH_TANK_FHR,
+  HPWH_TIER_ADJUSTMENT,
   MONTHLY_HDD_FRAC,
   MONTH_DAYS,
   MONTHS,
@@ -39,7 +40,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     inletWaterF, storageSetpointF, deliveryF,
     demandMethod, occupantsPerUnit, gpcd,
     recircLoopLengthFt, pipeInsulationR, recircReturnTempF, ambientPipeF,
-    gasEfficiency, hpwhRefrigerant, hpwhAmbientF, swingTankEnabled,
+    gasEfficiency, hpwhRefrigerant, hpwhAmbientF, swingTankEnabled, hpwhTier,
     elecRate, gasRate, gridSubregion, customEF,
     avgUnitSqft, envelopePreset, indoorDesignF, combiTankSize,
     fanCoilSupplyF, combiDHWSetpointF, hpwhOpLimitF, ventilationLoadPerUnit,
@@ -50,6 +51,11 @@ export function runCalc(input: DhwInputs): CalcResult {
   const totalUnits = unitsStudio + units1BR + units2BR + units3BR;
   const climate = CLIMATE_DESIGN[climateZone];
   const effectiveHpwhAmbient = hpwhAmbientF ?? climate.mechRoomAnnual;
+
+  // HPWH efficiency tier — applied as a COP multiplier to every climate-based
+  // hpwhCOP() call, so monthly / annual / combi COPs all scale consistently.
+  // Default tier "energy_star" has multiplier 1.00 → existing inputs unchanged.
+  const hpwhTierMult = HPWH_TIER_ADJUSTMENT[hpwhTier].copMultiplier;
 
   const ashraeProfile = ASHRAE_APT_DEMAND[occupancyProfile];
 
@@ -88,7 +94,7 @@ export function runCalc(input: DhwInputs): CalcResult {
   // ---- TECH COMPARISON ---------------------------------------------------
   const gasInputBTUH = totalBTUH / gasEfficiency;
   const resistanceInputKW = totalKW;
-  const cop = hpwhCOP(effectiveHpwhAmbient, inletWaterF, storageSetpointF, hpwhRefrigerant);
+  const cop = hpwhCOP(effectiveHpwhAmbient, inletWaterF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
   const capFactor = hpwhCapacityFactor(effectiveHpwhAmbient, hpwhRefrigerant);
   const hpwhInputKW = totalKW / cop;
   const hpwhNameplateKW = hpwhInputKW / capFactor;
@@ -98,7 +104,7 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualDemandBTU = avgDayDemand * 8.33 * temperatureRise * 365;
   const annualRecircBTU = recircLossBTUH * 8760;
   const annualTotalBTU = annualDemandBTU + annualRecircBTU;
-  const annualCOP = hpwhCOP(climate.mechRoomAnnual, inletWaterF, storageSetpointF, hpwhRefrigerant);
+  const annualCOP = hpwhCOP(climate.mechRoomAnnual, inletWaterF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
 
   const annualGasTherms = annualTotalBTU / (gasEfficiency * 100000);
   const annualResistanceKWh = annualTotalBTU / 3412;
@@ -144,8 +150,8 @@ export function runCalc(input: DhwInputs): CalcResult {
   const dhwMetByFHR = fhr >= worstPeakDHW;
 
   const effectiveTankSetpointForHeating = combiCOPAdjustment(fanCoilSupplyF, combiDHWSetpointF);
-  const combiCOP_heating = hpwhCOP(70, inletWaterF, effectiveTankSetpointForHeating, "HFC");
-  const combiCOP_dhw = hpwhCOP(70, inletWaterF, combiDHWSetpointF, "HFC");
+  const combiCOP_heating = hpwhCOP(70, inletWaterF, effectiveTankSetpointForHeating, "HFC") * hpwhTierMult;
+  const combiCOP_dhw = hpwhCOP(70, inletWaterF, combiDHWSetpointF, "HFC") * hpwhTierMult;
 
   const combiCompressorOutputBTUH_0BR = tankSpec.input_kw * 3412 * combiCOP_heating;
   const combiCompressorOutputBTUH_1BR = tankSpec.input_kw * 3412 * combiCOP_heating;
@@ -179,8 +185,8 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualDHWBTU_2BR = dhwAvg_2BR * 365 * 8.33 * (combiDHWSetpointF - inletWaterF);
   const annualDHWBTU_3BR = dhwAvg_3BR * 365 * 8.33 * (combiDHWSetpointF - inletWaterF);
 
-  const seasonalCOP_heating = hpwhCOP((climate.avgAnnual + 55) / 2, inletWaterF, effectiveTankSetpointForHeating, "HFC");
-  const seasonalCOP_dhw = hpwhCOP(climate.avgAnnual, inletWaterF, combiDHWSetpointF, "HFC");
+  const seasonalCOP_heating = hpwhCOP((climate.avgAnnual + 55) / 2, inletWaterF, effectiveTankSetpointForHeating, "HFC") * hpwhTierMult;
+  const seasonalCOP_dhw = hpwhCOP(climate.avgAnnual, inletWaterF, combiDHWSetpointF, "HFC") * hpwhTierMult;
 
   const resistanceShare = needsFullResistanceBackup ? 0.20 : 0.05;
 
@@ -326,9 +332,9 @@ export function runCalc(input: DhwInputs): CalcResult {
     const monthDHWBTU_inunit_perUnit = ashraeProfile.avg * 8.33 * monthDHW_rise_inunit * daysInMonth;
     const monthDHWBTU_inunit_total = monthDHWBTU_inunit_perUnit * totalUnits;
 
-    const monthCOP_central = hpwhCOP(monthMechRoom, monthInlet, storageSetpointF, hpwhRefrigerant);
-    const monthCOP_dhw_inunit = hpwhCOP(monthMechRoom, monthInlet, combiDHWSetpointF, "HFC");
-    const monthCOP_heating_inunit = hpwhCOP(monthMechRoom, monthInlet, effectiveTankSetpointForHeating, "HFC");
+    const monthCOP_central = hpwhCOP(monthMechRoom, monthInlet, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
+    const monthCOP_dhw_inunit = hpwhCOP(monthMechRoom, monthInlet, combiDHWSetpointF, "HFC") * hpwhTierMult;
+    const monthCOP_heating_inunit = hpwhCOP(monthMechRoom, monthInlet, effectiveTankSetpointForHeating, "HFC") * hpwhTierMult;
 
     const monthHeatingBTU = totalHeatingAnnualBTU * monthlyHDDFrac[m];
     const monthResistanceShare =

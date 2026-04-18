@@ -180,6 +180,56 @@ export const HPWH_TANK_FHR: Record<HPWHTankSize, HPWHTankSpec> = {
 };
 
 // ---------------------------------------------------------------------------
+// HPWH efficiency tiers (applies to central + in-unit + combi HPWH systems).
+// The tier is a COP quality multiplier — it represents compressor type,
+// heat-exchanger quality, and refrigerant choice. Applied at runtime to the
+// climate-based hpwhCOP() output so the monthly COP, annual COP, and FHR
+// checks all scale consistently. Default is ENERGY STAR (multiplier 1.00)
+// which matches the values in HPWH_TANK_FHR, so existing inputs don't shift.
+//
+// References:
+//   - ENERGY STAR Residential Water Heaters Specification v4.0 (2023)
+//   - CEE Tier 3 Advanced HPWH specification
+//   - AHRI 1300 certified performance ratings (representative ranges)
+//   - NEEA Advanced Water Heating Specification (AWHS)
+// ---------------------------------------------------------------------------
+export type HPWHTier = "standard" | "energy_star" | "high_efficiency";
+
+export interface HPWHTierSpec {
+  /** Multiplier on the climate-derived COP from hpwhCOP() */
+  copMultiplier: number;
+  label: string;
+  /** Short description for hint text */
+  description: string;
+  /** Representative UEF range for a typical 50–80 gal unit at this tier */
+  uefRange: string;
+}
+
+export const HPWH_TIER_ADJUSTMENT: Record<HPWHTier, HPWHTierSpec> = {
+  standard: {
+    copMultiplier: 0.80,
+    label: "Standard",
+    description:
+      "Older / budget single-speed HPWHs (e.g. Rheem Performance, Bradford W RE350S). HFC refrigerant, basic integration.",
+    uefRange: "UEF 2.5–2.9",
+  },
+  energy_star: {
+    copMultiplier: 1.00,
+    label: "ENERGY STAR",
+    description:
+      "Current market baseline (e.g. AO Smith Voltex, Rheem ProTerra gen 2). Meets ENERGY STAR Residential WH v4.0 minimum.",
+    uefRange: "UEF 3.3–3.9",
+  },
+  high_efficiency: {
+    copMultiplier: 1.15,
+    label: "High-efficiency",
+    description:
+      "Premium inverter-driven / advanced refrigerant (e.g. Rheem ProTerra Plus, Sanden CO2, Bradford AeroTherm Pro). Better part-load and cold-ambient performance.",
+    uefRange: "UEF 3.9–4.3+",
+  },
+};
+
+// ---------------------------------------------------------------------------
 // In-unit gas tank WH (ENERGY STAR, AHRI Directory, DOE UEF)
 // ---------------------------------------------------------------------------
 export type GasTankSize = 40 | 50 | 75 | 100;

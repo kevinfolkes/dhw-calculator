@@ -4,7 +4,12 @@ import { Info } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field, NumberInput, SelectInput } from "@/components/ui/Field";
 import { Grid } from "@/components/ui/Grid";
-import { CLIMATE_DESIGN, type ClimateZoneKey } from "@/lib/engineering/constants";
+import {
+  CLIMATE_DESIGN,
+  HPWH_TIER_ADJUSTMENT,
+  type ClimateZoneKey,
+  type HPWHTier,
+} from "@/lib/engineering/constants";
 import { SYSTEM_TYPES, type SystemTypeKey } from "@/lib/engineering/system-types";
 import { DEFAULT_FIXTURE_GPM, type DhwInputs, type FixtureGPM } from "@/lib/calc/inputs";
 
@@ -48,6 +53,21 @@ export function BuildingTab({ inputs, update }: Props) {
                   { value: "condensing", label: "Condensing" },
                   { value: "atmospheric", label: "Non-condensing" },
                 ]}
+              />
+            </Field>
+          )}
+          {sys.tech === "hpwh" && (
+            <Field
+              label="Efficiency tier"
+              hint={`${HPWH_TIER_ADJUSTMENT[inputs.hpwhTier].description} ${HPWH_TIER_ADJUSTMENT[inputs.hpwhTier].uefRange}. Applied as a ${(HPWH_TIER_ADJUSTMENT[inputs.hpwhTier].copMultiplier * 100).toFixed(0)}% multiplier on the climate-derived COP.`}
+            >
+              <SelectInput<HPWHTier>
+                value={inputs.hpwhTier}
+                onChange={(v) => update("hpwhTier", v)}
+                options={(Object.keys(HPWH_TIER_ADJUSTMENT) as HPWHTier[]).map((k) => ({
+                  value: k,
+                  label: `${HPWH_TIER_ADJUSTMENT[k].label} (${HPWH_TIER_ADJUSTMENT[k].uefRange})`,
+                }))}
               />
             </Field>
           )}

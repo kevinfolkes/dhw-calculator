@@ -12,6 +12,7 @@ import type {
   GasTanklessInput,
   GridSubregion,
   HPWHTankSize,
+  HPWHTier,
   OccupancyProfile,
 } from "@/lib/engineering/constants";
 import type { Refrigerant } from "@/lib/engineering/hpwh";
@@ -81,6 +82,8 @@ export interface DhwInputs {
   /** null → derive from mech room annual */
   hpwhAmbientF: number | null;
   swingTankEnabled: boolean;
+  /** Efficiency tier for any heat-pump system (central + in-unit + combi) */
+  hpwhTier: HPWHTier;
 
   // Utility / carbon
   elecRate: number;
@@ -136,6 +139,7 @@ export const DEFAULT_INPUTS: DhwInputs = {
   hpwhRefrigerant: "CO2",
   hpwhAmbientF: null,
   swingTankEnabled: true,
+  hpwhTier: "energy_star",
   elecRate: 0.14,
   gasRate: 1.20,
   gridSubregion: "MROW (Upper MW)",
