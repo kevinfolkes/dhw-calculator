@@ -183,21 +183,8 @@ export default function DhwCalculator() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 20 }}>💧</span>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "-0.01em" }}>
-              DHW Sizing Calculator
-            </div>
-            <div
-              style={{
-                fontSize: 10,
-                color: "rgba(255,255,255,0.4)",
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              Multifamily ASHRAE/ASPE
-            </div>
+          <div style={{ fontWeight: 800, fontSize: 15, color: "#fff", letterSpacing: "-0.01em" }}>
+            DHW Sizing Calculator
           </div>
         </div>
 
