@@ -31,7 +31,8 @@ export function BuildingTab({ inputs, update }: Props) {
               label: SYSTEM_TYPES[k].label,
             }))}
           />
-          {inputs.systemType === "inunit_gas_tank" && (
+          {(inputs.systemType === "inunit_gas_tank" ||
+            inputs.systemType === "inunit_combi_gas") && (
             <Field
               label="Efficiency tier"
               hint={
