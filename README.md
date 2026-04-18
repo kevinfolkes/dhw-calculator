@@ -1,7 +1,11 @@
 # DHW Sizing Calculator
 
+[![Live Demo](https://img.shields.io/badge/demo-live-success?style=flat-square)](https://dhw-calculator.vercel.app/)
+
 Multifamily domestic-hot-water sizing and energy modeling tool. Ported from a
 self-contained React artifact into a typed, testable Next.js project.
+
+**Live demo:** [dhw-calculator.vercel.app](https://dhw-calculator.vercel.app/)
 
 **Stack.** Next.js 16 (App Router) · React 19 · TypeScript 5 (strict) ·
 Tailwind v4 · Recharts · Vitest · jsPDF / docx for submittal export.

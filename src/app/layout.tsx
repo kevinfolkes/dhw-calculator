@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DHW Sizing — Multifamily Water Heating Calculator",
+  title: "DHW Sizing Calculator — Multifamily Water Heating",
   description:
     "ASHRAE-based sizing and energy modeling for multifamily domestic hot water systems. Central and in-unit, gas and all-electric.",
 };
