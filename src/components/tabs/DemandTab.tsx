@@ -137,6 +137,7 @@ export function DemandTab({ inputs, update, result }: Props) {
           hunter={result.demandHunter_MH}
           occupancy={result.demandOccupancy_MH}
           occupancyProfile={inputs.occupancyProfile}
+          totalUnits={result.totalUnits}
         />
       </Card>
 
@@ -301,11 +302,13 @@ function AgreementDiagnostic({
   hunter,
   occupancy,
   occupancyProfile,
+  totalUnits,
 }: {
   ashrae: number;
   hunter: number;
   occupancy: number;
   occupancyProfile: "low" | "medium" | "high";
+  totalUnits: number;
 }) {
   const methods = [
     { key: "ashrae" as const, name: "ASHRAE", value: ashrae, color: "var(--accent-blue)" },
@@ -349,7 +352,18 @@ function AgreementDiagnostic({
   }
 
   // Spread ≥30% — give a targeted hint.
-  const hint = diagnose(outlier.key, outlierHigh, occupancyProfile);
+  // Small-system override: when Hunter is the high outlier AND totalUnits < 10,
+  // the cause isn't "rich fixture mix" — it's that Hunter's population-scale
+  // probability curve doesn't apply at this scale. Short-circuit the generic
+  // diagnose() and give the scale-specific message instead.
+  const hunterScaleBreakdown =
+    outlier.key === "hunter" && outlierHigh && totalUnits < 10;
+  const hint = hunterScaleBreakdown
+    ? {
+        cause: `Hunter/ASPE doesn't apply at this scale (${totalUnits} ${totalUnits === 1 ? "apartment" : "apartments"}). The method's WSFU→GPM curve, 80% diversity floor, and GPM×60 conversion to peak-hour all assume a population of dozens+ fixtures firing statistically. For a single apartment or tiny building, only 1–2 fixtures realistically run at once, for ~10–15 min — not a sustained 7 GPM for an hour. Not a fixture-mix issue.`,
+        fix: `Use ASHRAE Ch. 51 (apartment-count method) or Occupancy (gpcd) as your governing method. Hunter becomes reliable at 10+ apartments and converges with the other methods at 30+.`,
+      }
+    : diagnose(outlier.key, outlierHigh, occupancyProfile);
   return (
     <Callout tone="warn">
       <strong>Methods disagree by {Math.round(spread * 100)}%.</strong> The{" "}
