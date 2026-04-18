@@ -114,6 +114,13 @@ export function DemandTab({ inputs, update, result }: Props) {
               value={result.demandHunter_MH}
               formula={`${fmt(result.peakGPM_modified, 1)} GPM × 60 × ${(result.diversityFactor * 100).toFixed(0)}% div`}
               accent="var(--accent-violet)"
+              scaleWarning={
+                result.totalUnits < 10
+                  ? `Unreliable below 10 apartments (you have ${result.totalUnits}). Hunter is calibrated for population-scale co-use — at this scale it typically overstates peak by 10–30×. Use ASHRAE or Occupancy as governing.`
+                  : result.totalUnits < 30
+                  ? `Marginal scale (${result.totalUnits} apts). Hunter may overstate peak by 2–3×; cross-check against ASHRAE before committing.`
+                  : undefined
+              }
             />
             <MethodCard
               name="Occupancy"
@@ -497,6 +504,7 @@ function MethodCard({
   value,
   formula,
   accent,
+  scaleWarning,
 }: {
   name: string;
   method: DemandMethod;
@@ -504,6 +512,8 @@ function MethodCard({
   value: number;
   formula: string;
   accent: string;
+  /** Optional scale-validity warning shown below the formula (e.g. Hunter < 10 apts). */
+  scaleWarning?: string;
 }) {
   const isGov = method === governing;
   return (
@@ -543,6 +553,23 @@ function MethodCard({
         <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)", marginLeft: 4 }}>GPH</span>
       </p>
       <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{formula}</div>
+      {scaleWarning && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "6px 10px",
+            background: "rgba(245,158,11,0.10)",
+            borderLeft: "2px solid var(--accent-amber)",
+            borderRadius: 4,
+            fontSize: 11,
+            lineHeight: 1.45,
+            color: "var(--accent-amber)",
+            fontWeight: 600,
+          }}
+        >
+          ⚠ {scaleWarning}
+        </div>
+      )}
     </div>
   );
 }
