@@ -150,12 +150,18 @@ export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
         const total15 = capCost + annCost * 15;
         if (!best || total15 < best.total15!) best = { tankGal: s, subtype: "condensing", capCost, annCost, total15 };
       }
+      // Atmospheric tanks are a legitimate option for both DHW-only and combi
+      // systems: forced-air combis (e.g. Aquatherm "Combo Heater") have been
+      // installed since the 1970s with atmospheric tanks, and return water
+      // temps through an air-handler coil (~110-120°F) stay above flue
+      // condensation territory. Size limit of <50 gal reflects typical SKU
+      // availability in atmospheric.
       if (s < 50 && GAS_TANK_WH[s].fhr_atmospheric >= reqFHR && meetsCombi(s, "atmospheric")) {
         const size: InstalledCostParams = { tankGal: s, subtype: "atmospheric" };
         const capCost = ic(size);
         const annCost = annualCostForSize(size);
         const total15 = capCost + annCost * 15;
-        if (best && total15 < best.total15!) best = { tankGal: s, subtype: "atmospheric", capCost, annCost, total15 };
+        if (!best || total15 < best.total15!) best = { tankGal: s, subtype: "atmospheric", capCost, annCost, total15 };
       }
     }
 
