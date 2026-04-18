@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Book, Building2, Calculator, ClipboardList, Droplets, FileText, Gauge, Home,
+  Book, Building2, Calculator, ClipboardList, Droplets, FileText, Gauge, Home, Sigma,
   ThermometerSun, type LucideIcon,
 } from "lucide-react";
 import { runCalc } from "@/lib/calc/pipeline";
@@ -17,6 +17,7 @@ import { SizingTab } from "@/components/tabs/SizingTab";
 import { EquipmentTab } from "@/components/tabs/EquipmentTab";
 import { CombiTab } from "@/components/tabs/CombiTab";
 import { EnergyTab } from "@/components/tabs/EnergyTab";
+import { CalculationsTab } from "@/components/tabs/CalculationsTab";
 import { ComplianceTab } from "@/components/tabs/ComplianceTab";
 import { MethodologyTab } from "@/components/tabs/MethodologyTab";
 import { exportDOCX, exportPDF } from "@/lib/export/submittal";
@@ -30,6 +31,7 @@ type TabId =
   | "tech"
   | "combi"
   | "energy"
+  | "calculations"
   | "methodology"
   | "compliance";
 
@@ -74,6 +76,7 @@ export default function DhwCalculator() {
     }
     base.push(
       { id: "energy", label: "Energy Model", icon: Calculator },
+      { id: "calculations", label: "Calculations", icon: Sigma },
       { id: "methodology", label: "Methodology", icon: Book },
       { id: "compliance", label: "Compliance", icon: FileText },
     );
@@ -257,6 +260,7 @@ export default function DhwCalculator() {
         {tab === "tech" && <EquipmentTab inputs={inputs} update={update} result={result} />}
         {tab === "combi" && <CombiTab inputs={inputs} update={update} result={result} />}
         {tab === "energy" && <EnergyTab inputs={inputs} result={result} />}
+        {tab === "calculations" && <CalculationsTab inputs={inputs} result={result} />}
         {tab === "methodology" && <MethodologyTab />}
         {tab === "compliance" && (
           <ComplianceTab
