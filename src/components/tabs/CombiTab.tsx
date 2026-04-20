@@ -274,6 +274,25 @@ export function CombiTab({ inputs, update, result }: Props) {
                   <NumberInput value={inputs.hpwhOpLimitF} onChange={(n) => update("hpwhOpLimitF", n)} min={-20} max={50} />
                 </Field>
               )}
+              {hasSpaceHeating && (
+                <Field
+                  label="Buffer tank"
+                  hint={
+                    inputs.bufferTankEnabled && result.bufferTankVolumeGal != null
+                      ? `${result.bufferTankVolumeGal} gal recommended (prevents compressor short-cycling)`
+                      : "Recommended for HPWH combi to prevent short-cycling on low heating loads"
+                  }
+                >
+                  <SelectInput
+                    value={inputs.bufferTankEnabled ? "yes" : "no"}
+                    onChange={(v) => update("bufferTankEnabled", v === "yes")}
+                    options={[
+                      { value: "no", label: "Disabled" },
+                      { value: "yes", label: "Enabled" },
+                    ]}
+                  />
+                </Field>
+              )}
             </Grid>
           </Card>
 
