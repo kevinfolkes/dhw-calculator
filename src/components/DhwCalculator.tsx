@@ -50,11 +50,12 @@ export default function DhwCalculator() {
   const sys = SYSTEM_TYPES[inputs.systemType];
 
   const tabs: TabDef[] = useMemo(() => {
+    // Order enforces a linear flow: each tab's outputs depend only on inputs
+    // chosen in earlier tabs. Equipment selections come before the evaluation
+    // tabs (Current Design, Auto-Size, Energy) that reference them.
     const base: TabDef[] = [
       { id: "building", label: "Building & System", icon: Building2 },
       { id: "demand", label: "Demand", icon: Droplets },
-      { id: "current", label: "Current Design", icon: ClipboardList },
-      { id: "autosize", label: "Auto-Size", icon: Gauge },
     ];
     if (sys.topology === "central") {
       base.push(
@@ -75,6 +76,8 @@ export default function DhwCalculator() {
       base.push({ id: "combi", label, icon: Home });
     }
     base.push(
+      { id: "current", label: "Current Design", icon: ClipboardList },
+      { id: "autosize", label: "Auto-Size", icon: Gauge },
       { id: "energy", label: "Energy Model", icon: Calculator },
       { id: "calculations", label: "Calculations", icon: Sigma },
       { id: "methodology", label: "Methodology", icon: Book },
