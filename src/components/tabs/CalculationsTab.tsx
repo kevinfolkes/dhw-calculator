@@ -127,13 +127,14 @@ export function CalculationsTab({ inputs, result }: Props) {
         />
         <Prose>The water-side temperatures define storage rise and the tempering multiplier:</Prose>
         <Formula>
-          rise = storageSetpoint − inletWater = {inputs.storageSetpointF}°F − {inputs.inletWaterF}°F
+          rise = storageSetpoint − inletWater = {inputs.storageSetpointF}°F − {result.effectiveInletF}°F
+          {inputs.inletWaterF == null && " (auto from climate)"}
           = <Result>{fmt(result.temperatureRise)}</Result> °F
         </Formula>
         <Formula>
           temper_mult = (storage − inlet) ÷ (delivery − inlet) ={" "}
-          ({inputs.storageSetpointF} − {inputs.inletWaterF}) ÷ ({inputs.deliveryF} −{" "}
-          {inputs.inletWaterF}) = <Result>{result.temperMultiplier.toFixed(3)}</Result>
+          ({inputs.storageSetpointF} − {result.effectiveInletF}) ÷ ({inputs.deliveryF} −{" "}
+          {result.effectiveInletF}) = <Result>{result.temperMultiplier.toFixed(3)}</Result>
         </Formula>
         <Prose>
           The temper multiplier converts stored-water volume into delivered-water volume at the
@@ -377,7 +378,7 @@ export function CalculationsTab({ inputs, result }: Props) {
               {HPWH_TIER_ADJUSTMENT[inputs.hpwhTier].label}).
             </Prose>
             <Formula>
-              COP = hpwhCOP(ambient={result.effectiveHpwhAmbient.toFixed(0)}°F, inlet={inputs.inletWaterF}°F,
+              COP = hpwhCOP(ambient={result.effectiveHpwhAmbient.toFixed(0)}°F, inlet={result.effectiveInletF}°F,
               setpoint={inputs.storageSetpointF}°F, {inputs.hpwhRefrigerant}) × tier_mult ={" "}
               <Result>{result.cop.toFixed(2)}</Result>
             </Formula>
@@ -488,7 +489,7 @@ export function CalculationsTab({ inputs, result }: Props) {
               <Result>{result.combi.dhwMetByFHR ? "✓ meets" : "✗ below"}</Result>
             </Formula>
             <Formula>
-              COP_dhw = hpwhCOP(70°F, {inputs.inletWaterF}°F, {inputs.combiDHWSetpointF}°F, HFC) × tier_mult ={" "}
+              COP_dhw = hpwhCOP(70°F, {result.effectiveInletF}°F, {inputs.combiDHWSetpointF}°F, HFC) × tier_mult ={" "}
               <Result>{result.combi.combiCOP_dhw.toFixed(2)}</Result>
             </Formula>
             {hasHeating && (
@@ -613,6 +614,55 @@ export function CalculationsTab({ inputs, result }: Props) {
           </Formula>
         </Step>
       )}
+
+      {/* 13b BUFFER TANK SIZING (combi HPWH only) */}
+      {inputs.systemType === "inunit_combi" &&
+        inputs.bufferTankEnabled &&
+        result.bufferTankVolumeGal != null && (
+          <Step n={isCentral ? 13 : 9} title="Buffer tank sizing">
+            <Prose>
+              A buffer tank on the heating loop prevents compressor short-cycling during low-load
+              operation. Rule of thumb: store enough heat for 10 minutes of compressor runtime at
+              a 10°F buffer swing.
+            </Prose>
+            <Formula>
+              V_gal = Q_compressor × t_min ÷ (60 × 8.33 × ΔT_swing)
+            </Formula>
+            <Formula>
+              V_gal = {fmt(
+                Math.max(
+                  result.combi.combiCompressorOutputBTUH_0BR,
+                  result.combi.combiCompressorOutputBTUH_1BR,
+                  result.combi.combiCompressorOutputBTUH_2BR,
+                  result.combi.combiCompressorOutputBTUH_3BR,
+                ),
+              )}{" "}
+              × 10 ÷ (60 × 8.33 × 10) ={" "}
+              <Result>
+                {(
+                  Math.max(
+                    result.combi.combiCompressorOutputBTUH_0BR,
+                    result.combi.combiCompressorOutputBTUH_1BR,
+                    result.combi.combiCompressorOutputBTUH_2BR,
+                    result.combi.combiCompressorOutputBTUH_3BR,
+                  ) *
+                  10 /
+                  (60 * 8.33 * 10)
+                ).toFixed(1)}
+              </Result>{" "}
+              gal raw
+            </Formula>
+            <Formula>
+              rounded up to nearest SKU [20, 40, 50, 80, 120] ={" "}
+              <Result>{result.bufferTankVolumeGal}</Result> gal
+            </Formula>
+            <Prose>
+              The worst-case (largest) per-BR compressor output is used so the buffer tank covers
+              every unit type. Sizing mirrors the <Em>worstHeating</Em> convention used elsewhere
+              for combi tank selection.
+            </Prose>
+          </Step>
+        )}
 
       {/* 14 ANNUAL ENERGY */}
       <Step

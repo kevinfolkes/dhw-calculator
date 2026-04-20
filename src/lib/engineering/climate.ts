@@ -5,7 +5,9 @@
  * Reference: ASHRAE Handbook Fundamentals Ch. 32 / Burch & Christensen 2007.
  */
 import {
+  CLIMATE_DESIGN,
   MONTHLY_AMBIENT_AMPLITUDE_F,
+  type ClimateZoneKey,
   type HDDArchetype,
 } from "./constants";
 
@@ -39,4 +41,25 @@ export function monthlyInletAdjustment(month: number, climateZoneStr: string): n
   const amp = MONTHLY_AMBIENT_AMPLITUDE_F[archetype] * 0.45;
   const lag = 1.5;
   return -amp * Math.cos((2 * Math.PI * (month - lag)) / 12);
+}
+
+/**
+ * Annual mean inlet water temperature (°F) for a climate zone.
+ * Ref: Burch & Christensen 2007 — groundwater annual mean ≈ annual mean air temp.
+ */
+export function deriveInletWaterF(climateZoneStr: string): number {
+  const design = CLIMATE_DESIGN[climateZoneStr as ClimateZoneKey];
+  if (!design) return 50;
+  return Math.round(design.avgAnnual);
+}
+
+/**
+ * Winter-design (coldest-month) inlet water temperature (°F). Used for
+ * worst-case tank FHR sizing. Applies the cold-side extreme of the monthly
+ * inlet adjustment curve to the annual mean.
+ */
+export function winterDesignInletF(climateZoneStr: string): number {
+  const mean = deriveInletWaterF(climateZoneStr);
+  // January (month 0) is the coldest month in the monthly inlet curve.
+  return Math.round(mean + monthlyInletAdjustment(0, climateZoneStr));
 }

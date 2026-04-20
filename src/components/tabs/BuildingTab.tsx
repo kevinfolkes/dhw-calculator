@@ -10,6 +10,7 @@ import {
   type ClimateZoneKey,
   type HPWHTier,
 } from "@/lib/engineering/constants";
+import { deriveInletWaterF } from "@/lib/engineering/climate";
 import { SYSTEM_TYPES, type SystemTypeKey } from "@/lib/engineering/system-types";
 import { DEFAULT_FIXTURE_GPM, type DhwInputs, type FixtureGPM } from "@/lib/calc/inputs";
 
@@ -130,8 +131,51 @@ export function BuildingTab({ inputs, update }: Props) {
               ]}
             />
           </Field>
-          <Field label="Inlet water temp" suffix="°F">
-            <NumberInput value={inputs.inletWaterF} onChange={(n) => update("inletWaterF", n)} min={33} max={90} />
+          <Field
+            label="Inlet water temp"
+            suffix="°F"
+            hint={
+              inputs.inletWaterF == null
+                ? `${deriveInletWaterF(inputs.climateZone)}°F — annual mean for ${inputs.climateZone}`
+                : "Manual override"
+            }
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <SelectInput
+                value={inputs.inletWaterF == null ? "auto" : "manual"}
+                onChange={(v) =>
+                  update(
+                    "inletWaterF",
+                    v === "auto" ? null : deriveInletWaterF(inputs.climateZone),
+                  )
+                }
+                options={[
+                  { value: "auto", label: "Auto from climate" },
+                  { value: "manual", label: "Manual" },
+                ]}
+              />
+              {inputs.inletWaterF == null ? (
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 13,
+                    color: "var(--text-secondary)",
+                    padding: "6px 10px",
+                    background: "var(--surface-muted, rgba(0,0,0,0.04))",
+                    borderRadius: 6,
+                  }}
+                >
+                  {deriveInletWaterF(inputs.climateZone)}°F
+                </div>
+              ) : (
+                <NumberInput
+                  value={inputs.inletWaterF}
+                  onChange={(n) => update("inletWaterF", n)}
+                  min={33}
+                  max={90}
+                />
+              )}
+            </div>
           </Field>
           <Field label="Storage setpoint" suffix="°F">
             <NumberInput value={inputs.storageSetpointF} onChange={(n) => update("storageSetpointF", n)} min={100} max={180} />

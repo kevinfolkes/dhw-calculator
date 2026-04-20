@@ -570,6 +570,15 @@ export function CurrentDesignTab({ inputs, result }: Props) {
                 accent={A_HPWH}
               />
             )}
+            {result.bufferTankVolumeGal != null && (
+              <MetricCard
+                label="Buffer tank"
+                value={fmt(result.bufferTankVolumeGal)}
+                unit="gal recommended"
+                sub="prevents compressor short-cycling"
+                accent={A_HPWH}
+              />
+            )}
           </Grid>
         )}
 

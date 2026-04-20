@@ -130,7 +130,7 @@ function buildInputRows(i: DhwInputs): Row[] {
     },
     { label: "Occupancy profile", value: i.occupancyProfile },
     { label: "Climate zone", value: i.climateZone },
-    { label: "Inlet / storage / delivery", value: `${i.inletWaterF}°F / ${i.storageSetpointF}°F / ${i.deliveryF}°F` },
+    { label: "Inlet / storage / delivery", value: `${i.inletWaterF ?? "auto"}°F / ${i.storageSetpointF}°F / ${i.deliveryF}°F` },
     { label: "Demand method", value: i.demandMethod },
     ...(sys.hasRecirc
       ? [

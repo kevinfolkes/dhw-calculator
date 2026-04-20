@@ -61,7 +61,8 @@ export interface DhwInputs {
   units3BR: number;
   occupancyProfile: OccupancyProfile;
   climateZone: ClimateZoneKey;
-  inletWaterF: number;
+  /** null → derive from climate-zone annual mean (Burch & Christensen 2007) */
+  inletWaterF: number | null;
   storageSetpointF: number;
   deliveryF: number;
 
@@ -125,7 +126,7 @@ export const DEFAULT_INPUTS: DhwInputs = {
   units3BR: 10,
   occupancyProfile: "medium",
   climateZone: "5A - Chicago",
-  inletWaterF: 50,
+  inletWaterF: null,
   storageSetpointF: 140,
   deliveryF: 120,
   demandMethod: "ashrae",

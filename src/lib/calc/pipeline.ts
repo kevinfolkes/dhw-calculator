@@ -22,6 +22,7 @@ import {
   NG_LB_CO2_PER_THERM,
 } from "@/lib/engineering/constants";
 import {
+  deriveInletWaterF,
   getMonthlyHDDArchetype,
   monthlyAmbientAdjustment,
   monthlyInletAdjustment,
@@ -37,7 +38,7 @@ import type { CalcResult, ComplianceFlag, MonthlyRow } from "./types";
 export function runCalc(input: DhwInputs): CalcResult {
   const {
     unitsStudio, units1BR, units2BR, units3BR, occupancyProfile, climateZone,
-    inletWaterF, storageSetpointF, deliveryF,
+    storageSetpointF, deliveryF,
     demandMethod, occupantsPerUnit, gpcd,
     recircLoopLengthFt, pipeInsulationR, recircReturnTempF, ambientPipeF,
     gasEfficiency, hpwhRefrigerant, hpwhAmbientF, swingTankEnabled, hpwhTier,
@@ -46,7 +47,10 @@ export function runCalc(input: DhwInputs): CalcResult {
     fanCoilSupplyF, combiDHWSetpointF, hpwhOpLimitF, ventilationLoadPerUnit,
     systemType, gasTankSize, gasTankType, gasTankSetpointF,
     gasTanklessInput, tanklessDesignRiseF, tanklessSimultaneousFixtures, gasTanklessSetpointF,
+    bufferTankEnabled,
   } = input;
+
+  const effectiveInletF = input.inletWaterF ?? deriveInletWaterF(input.climateZone);
 
   const totalUnits = unitsStudio + units1BR + units2BR + units3BR;
   const climate = CLIMATE_DESIGN[climateZone];
@@ -80,11 +84,11 @@ export function runCalc(input: DhwInputs): CalcResult {
   const usableFraction = 0.75;
   const storageVolGal_nominal = peakHourDemand * storageCoef;
   const storageVolGal = storageVolGal_nominal / usableFraction;
-  const temperMultiplier = (storageSetpointF - inletWaterF) / (deliveryF - inletWaterF);
+  const temperMultiplier = (storageSetpointF - effectiveInletF) / (deliveryF - effectiveInletF);
   const temperedCapacityGal = storageVolGal * temperMultiplier;
 
   const recoveryGPH = peakHourDemand * recoveryCoef;
-  const temperatureRise = storageSetpointF - inletWaterF;
+  const temperatureRise = storageSetpointF - effectiveInletF;
   const recoveryBTUH = recoveryGPH * 8.33 * temperatureRise;
   const recoveryKW = recoveryBTUH / 3412;
 
@@ -94,7 +98,7 @@ export function runCalc(input: DhwInputs): CalcResult {
   // ---- TECH COMPARISON ---------------------------------------------------
   const gasInputBTUH = totalBTUH / gasEfficiency;
   const resistanceInputKW = totalKW;
-  const cop = hpwhCOP(effectiveHpwhAmbient, inletWaterF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
+  const cop = hpwhCOP(effectiveHpwhAmbient, effectiveInletF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
   const capFactor = hpwhCapacityFactor(effectiveHpwhAmbient, hpwhRefrigerant);
   const hpwhInputKW = totalKW / cop;
   const hpwhNameplateKW = hpwhInputKW / capFactor;
@@ -104,7 +108,7 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualDemandBTU = avgDayDemand * 8.33 * temperatureRise * 365;
   const annualRecircBTU = recircLossBTUH * 8760;
   const annualTotalBTU = annualDemandBTU + annualRecircBTU;
-  const annualCOP = hpwhCOP(climate.mechRoomAnnual, inletWaterF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
+  const annualCOP = hpwhCOP(climate.mechRoomAnnual, effectiveInletF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
 
   const annualGasTherms = annualTotalBTU / (gasEfficiency * 100000);
   const annualResistanceKWh = annualTotalBTU / 3412;
@@ -139,10 +143,10 @@ export function runCalc(input: DhwInputs): CalcResult {
   const dhwGPH_1BR = ashraeProfile.mh;
   const dhwGPH_2BR = ashraeProfile.mh;
   const dhwGPH_3BR = ashraeProfile.mh;
-  const dhwPeakInstantaneous_0BR = dhwGPH_0BR * 1.8 * 8.33 * (combiDHWSetpointF - inletWaterF);
-  const dhwPeakInstantaneous_1BR = dhwGPH_1BR * 1.8 * 8.33 * (combiDHWSetpointF - inletWaterF);
-  const dhwPeakInstantaneous_2BR = dhwGPH_2BR * 1.8 * 8.33 * (combiDHWSetpointF - inletWaterF);
-  const dhwPeakInstantaneous_3BR = dhwGPH_3BR * 1.8 * 8.33 * (combiDHWSetpointF - inletWaterF);
+  const dhwPeakInstantaneous_0BR = dhwGPH_0BR * 1.8 * 8.33 * (combiDHWSetpointF - effectiveInletF);
+  const dhwPeakInstantaneous_1BR = dhwGPH_1BR * 1.8 * 8.33 * (combiDHWSetpointF - effectiveInletF);
+  const dhwPeakInstantaneous_2BR = dhwGPH_2BR * 1.8 * 8.33 * (combiDHWSetpointF - effectiveInletF);
+  const dhwPeakInstantaneous_3BR = dhwGPH_3BR * 1.8 * 8.33 * (combiDHWSetpointF - effectiveInletF);
 
   const tankSpec = HPWH_TANK_FHR[combiTankSize];
   const fhr = tankSpec.fhr;
@@ -150,8 +154,8 @@ export function runCalc(input: DhwInputs): CalcResult {
   const dhwMetByFHR = fhr >= worstPeakDHW;
 
   const effectiveTankSetpointForHeating = combiCOPAdjustment(fanCoilSupplyF, combiDHWSetpointF);
-  const combiCOP_heating = hpwhCOP(70, inletWaterF, effectiveTankSetpointForHeating, "HFC") * hpwhTierMult;
-  const combiCOP_dhw = hpwhCOP(70, inletWaterF, combiDHWSetpointF, "HFC") * hpwhTierMult;
+  const combiCOP_heating = hpwhCOP(70, effectiveInletF, effectiveTankSetpointForHeating, "HFC") * hpwhTierMult;
+  const combiCOP_dhw = hpwhCOP(70, effectiveInletF, combiDHWSetpointF, "HFC") * hpwhTierMult;
 
   const combiCompressorOutputBTUH_0BR = tankSpec.input_kw * 3412 * combiCOP_heating;
   const combiCompressorOutputBTUH_1BR = tankSpec.input_kw * 3412 * combiCOP_heating;
@@ -180,13 +184,13 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualHeatingBTU_2BR = (24 * climate.hdd65 * heatingLoad_2BR) / designDeltaT;
   const annualHeatingBTU_3BR = (24 * climate.hdd65 * heatingLoad_3BR) / designDeltaT;
 
-  const annualDHWBTU_0BR = dhwAvg_0BR * 365 * 8.33 * (combiDHWSetpointF - inletWaterF);
-  const annualDHWBTU_1BR = dhwAvg_1BR * 365 * 8.33 * (combiDHWSetpointF - inletWaterF);
-  const annualDHWBTU_2BR = dhwAvg_2BR * 365 * 8.33 * (combiDHWSetpointF - inletWaterF);
-  const annualDHWBTU_3BR = dhwAvg_3BR * 365 * 8.33 * (combiDHWSetpointF - inletWaterF);
+  const annualDHWBTU_0BR = dhwAvg_0BR * 365 * 8.33 * (combiDHWSetpointF - effectiveInletF);
+  const annualDHWBTU_1BR = dhwAvg_1BR * 365 * 8.33 * (combiDHWSetpointF - effectiveInletF);
+  const annualDHWBTU_2BR = dhwAvg_2BR * 365 * 8.33 * (combiDHWSetpointF - effectiveInletF);
+  const annualDHWBTU_3BR = dhwAvg_3BR * 365 * 8.33 * (combiDHWSetpointF - effectiveInletF);
 
-  const seasonalCOP_heating = hpwhCOP((climate.avgAnnual + 55) / 2, inletWaterF, effectiveTankSetpointForHeating, "HFC") * hpwhTierMult;
-  const seasonalCOP_dhw = hpwhCOP(climate.avgAnnual, inletWaterF, combiDHWSetpointF, "HFC") * hpwhTierMult;
+  const seasonalCOP_heating = hpwhCOP((climate.avgAnnual + 55) / 2, effectiveInletF, effectiveTankSetpointForHeating, "HFC") * hpwhTierMult;
+  const seasonalCOP_dhw = hpwhCOP(climate.avgAnnual, effectiveInletF, combiDHWSetpointF, "HFC") * hpwhTierMult;
 
   const resistanceShare = needsFullResistanceBackup ? 0.20 : 0.05;
 
@@ -220,6 +224,27 @@ export function runCalc(input: DhwInputs): CalcResult {
   const perUnitElecDemand = tankSpec.resistance_kw + 1.5;
   const buildingPeakDemandKW_combi = perUnitElecDemand * totalUnits * 0.65;
 
+  // Buffer tank sizing for HPWH combi: prevents compressor short-cycling
+  // during low-load heating operation. Rule of thumb: store enough heat
+  // for 10 minutes of compressor runtime at a 10°F buffer swing.
+  //   V_gal = Q_compressor_BTUH × t_min / (60 min/hr × 8.33 lb/gal × 1 BTU/lb·°F × ΔT_swing)
+  // For common ranges this reduces to V ≈ Q_BTUH / 500.
+  let bufferTankVolumeGal: number | null = null;
+  if (bufferTankEnabled && systemType === "inunit_combi") {
+    const worstCompressorBTUH = Math.max(
+      combiCompressorOutputBTUH_0BR,
+      combiCompressorOutputBTUH_1BR,
+      combiCompressorOutputBTUH_2BR,
+      combiCompressorOutputBTUH_3BR,
+    );
+    const MIN_RUNTIME_MIN = 10;
+    const BUFFER_SWING_F = 10;
+    const rawBufferGal = (worstCompressorBTUH * MIN_RUNTIME_MIN) / (60 * 8.33 * BUFFER_SWING_F);
+    // Round up to common buffer-tank SKUs
+    const BUFFER_SKUS = [20, 40, 50, 80, 120];
+    bufferTankVolumeGal = BUFFER_SKUS.find((s) => s >= rawBufferGal) ?? 120;
+  }
+
   const combi = {
     dhwGPH_0BR, dhwGPH_1BR, dhwGPH_2BR, dhwGPH_3BR,
     designDeltaT, envFactor,
@@ -246,7 +271,7 @@ export function runCalc(input: DhwInputs): CalcResult {
   const perUnitPeakGPH = ashraeProfile.mh;
   const gasTankFHRMet = gasTankFHR >= perUnitPeakGPH;
   const gasTankInputMBH = gasTankSpec.input_mbh;
-  const gasTankRiseF = gasTankSetpointF - inletWaterF;
+  const gasTankRiseF = gasTankSetpointF - effectiveInletF;
   const gasTankOutputMBH = gasTankInputMBH * gasTankUEF;
   const gasTankRecoveryGPH = (gasTankOutputMBH * 1000) / (8.33 * gasTankRiseF);
   const gasTankAnnualBTU_perUnit = ashraeProfile.avg * 365 * 8.33 * gasTankRiseF;
@@ -276,7 +301,7 @@ export function runCalc(input: DhwInputs): CalcResult {
   const tanklessRequiredBTUH = tanklessPeakGPM * 500 * tanklessDesignRiseF;
   const tanklessCapacityAtRise = (tanklessSpec.input_mbh * tanklessSpec.uef * 1000) / (500 * tanklessDesignRiseF);
   const tanklessMetsDemand = tanklessCapacityAtRise >= tanklessPeakGPM;
-  const tanklessAnnualBTU_perUnit = ashraeProfile.avg * 365 * 8.33 * (gasTanklessSetpointF - inletWaterF);
+  const tanklessAnnualBTU_perUnit = ashraeProfile.avg * 365 * 8.33 * (gasTanklessSetpointF - effectiveInletF);
   const tanklessAnnualTherms_perUnit = tanklessAnnualBTU_perUnit / (tanklessSpec.uef * 100000);
   const tanklessBuildingTherms = tanklessAnnualTherms_perUnit * totalUnits;
   const tanklessBuildingCost = tanklessBuildingTherms * gasRate;
@@ -308,9 +333,9 @@ export function runCalc(input: DhwInputs): CalcResult {
 
   const inUnitRiseF = isInUnitGas_m
     ? currentSysDef.subtech === "tankless"
-      ? gasTanklessSetpointF - inletWaterF
-      : gasTankSetpointF - inletWaterF
-    : combiDHWSetpointF - inletWaterF;
+      ? gasTanklessSetpointF - effectiveInletF
+      : gasTankSetpointF - effectiveInletF
+    : combiDHWSetpointF - effectiveInletF;
   const inUnitAnnualDHWBTU_perUnit = ashraeProfile.avg * 365 * 8.33 * inUnitRiseF;
   const inUnitAnnualDHWBTU_total = inUnitAnnualDHWBTU_perUnit * totalUnits;
 
@@ -318,7 +343,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     const daysInMonth = MONTH_DAYS[m];
     const monthAmbient = climate.avgAnnual + monthlyAmbientAdjustment(m, climateZone);
     const monthMechRoom = climate.mechRoomAnnual + monthlyAmbientAdjustment(m, climateZone) * 0.5;
-    const monthInlet = inletWaterF + monthlyInletAdjustment(m, climateZone);
+    const monthInlet = effectiveInletF + monthlyInletAdjustment(m, climateZone);
 
     const monthDHW_rise_central = storageSetpointF - monthInlet;
     const monthDHWBTU_central = avgDayDemand * 8.33 * monthDHW_rise_central * daysInMonth;
@@ -549,6 +574,8 @@ export function runCalc(input: DhwInputs): CalcResult {
     inUnitGas,
     monthly: monthlyResults,
     autoSize: autoSizeResults,
+    effectiveInletF,
+    bufferTankVolumeGal,
   };
 }
 

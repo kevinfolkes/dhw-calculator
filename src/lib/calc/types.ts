@@ -215,4 +215,10 @@ export interface CalcResult {
   inUnitGas: InUnitGasResults;
   monthly: MonthlyResults;
   autoSize: AutoSizeResult | null;
+  /** Resolved inlet water temp (°F): user-supplied if set, otherwise derived
+   *  from the climate zone annual mean (Burch & Christensen 2007). */
+  effectiveInletF: number;
+  /** Recommended buffer tank volume (gal) for combi HPWH systems with
+   *  bufferTankEnabled. null when not applicable. */
+  bufferTankVolumeGal: number | null;
 }

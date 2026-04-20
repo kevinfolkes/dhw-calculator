@@ -516,7 +516,7 @@ export function MethodologyTab() {
               ["unitsStudio / 1BR / 2BR / 3BR", "number", "0 / 20 / 30 / 10", "Unit mix (studio = efficiency / 0-BR)"],
               ["occupancyProfile", "enum", "medium", "ASHRAE low/medium/high"],
               ["climateZone", "enum", "5A - Chicago", "ASHRAE climate zone string"],
-              ["inletWaterF", "°F", "50", "Cold-water inlet annual avg"],
+              ["inletWaterF", "°F | null", "null (auto)", "Cold-water inlet annual avg; null = derive from climate zone"],
               ["storageSetpointF", "°F", "140", "Tank storage temp (Legionella: keep ≥140)"],
               ["deliveryF", "°F", "120", "Delivered hot-water temp at fixture"],
               ["demandMethod", "enum", "ashrae", "ashrae / hunter / occupancy"],
