@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Book, Building2, Calculator, ClipboardList, Droplets, FileText, Gauge, Home, Sigma,
+  Book, Building2, Calculator, ClipboardList, Droplets, FileText, GitCompare, Gauge, Home, Sigma,
   ThermometerSun, type LucideIcon,
 } from "lucide-react";
 import { runCalc } from "@/lib/calc/pipeline";
@@ -20,6 +20,8 @@ import { EnergyTab } from "@/components/tabs/EnergyTab";
 import { CalculationsTab } from "@/components/tabs/CalculationsTab";
 import { ComplianceTab } from "@/components/tabs/ComplianceTab";
 import { MethodologyTab } from "@/components/tabs/MethodologyTab";
+import { ReportsTab } from "@/components/tabs/ReportsTab";
+import { CompareTab } from "@/components/tabs/CompareTab";
 import { exportDOCX, exportPDF } from "@/lib/export/submittal";
 
 type TabId =
@@ -33,7 +35,9 @@ type TabId =
   | "energy"
   | "calculations"
   | "methodology"
-  | "compliance";
+  | "compliance"
+  | "reports"
+  | "compare";
 
 interface TabDef {
   id: TabId;
@@ -82,6 +86,8 @@ export default function DhwCalculator() {
       { id: "calculations", label: "Calculations", icon: Sigma },
       { id: "methodology", label: "Methodology", icon: Book },
       { id: "compliance", label: "Compliance", icon: FileText },
+      { id: "reports", label: "Reports", icon: FileText },
+      { id: "compare", label: "Compare", icon: GitCompare },
     );
     return base;
   }, [sys]);
@@ -389,6 +395,10 @@ export default function DhwCalculator() {
             onShareLink={handleCopyLink}
           />
         )}
+        {tab === "reports" && (
+          <ReportsTab inputs={inputs} result={result} setInputs={setInputs} />
+        )}
+        {tab === "compare" && <CompareTab inputs={inputs} result={result} />}
       </main>
 
       {toast && <div className="ve-toast">{toast}</div>}
