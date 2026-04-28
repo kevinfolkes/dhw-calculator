@@ -7,6 +7,7 @@
 import type { DhwInputs } from "@/lib/calc/inputs";
 import type { CalcResult, ComplianceFlag } from "@/lib/calc/types";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
+import { ENGINE_VERSION } from "@/lib/version";
 
 const HEADING = "Multifamily DHW Sizing — Submittal Package";
 
@@ -26,11 +27,12 @@ export async function exportPDF(inputs: DhwInputs, result: CalcResult): Promise<
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.text(`System: ${SYSTEM_TYPES[inputs.systemType].label}`, 40, 70);
-  doc.text(`Generated: ${new Date().toLocaleString("en-US")}`, 40, 84);
+  doc.text(`Engine v${ENGINE_VERSION}`, 40, 84);
+  doc.text(`Generated: ${new Date().toLocaleString("en-US")}`, 40, 98);
 
   const inputRows = buildInputRows(inputs);
   autoTable(doc, {
-    startY: 100,
+    startY: 114,
     head: [["Input", "Value"]],
     body: inputRows.map((r) => [r.label, r.value]),
     styles: { fontSize: 9 },
@@ -96,6 +98,7 @@ export async function exportDOCX(inputs: DhwInputs, result: CalcResult): Promise
         children: [
           new Paragraph({ text: HEADING, heading: HeadingLevel.HEADING_1 }),
           new Paragraph({ text: `System: ${SYSTEM_TYPES[inputs.systemType].label}` }),
+          new Paragraph({ text: `Engine v${ENGINE_VERSION}` }),
           new Paragraph({ text: `Generated: ${new Date().toLocaleString("en-US")}` }),
           new Paragraph({ text: "Inputs", heading: HeadingLevel.HEADING_2 }),
           mkTable(["Input", "Value"], inputRows),
