@@ -209,6 +209,131 @@ export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
     };
   }
 
+  // ---------- CENTRAL HYBRID (HPWH + gas backup) -------------------------
+  // Two-piece-of-equipment plant: HPWH primary sized to `hybridSplitRatio ×
+  // totalKW` (then derated by capacity-factor), gas backup sized to cover
+  // the remainder. Storage gallons mirror the central_gas / central_hpwh
+  // sizing. The `cap` field in the recommendation is the HPWH kW
+  // (primary); `cap2` carries the gas backup MBH alongside it.
+  if (st === "central_hybrid") {
+    const minStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction / 50) * 50;
+    const recStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction * 1.25 / 50) * 50;
+
+    const minTank = CENTRAL_TANK_SIZES.find(s => s >= minStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const recTank = CENTRAL_TANK_SIZES.find(s => s >= recStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+
+    const ratio = Math.min(0.95, Math.max(0.05, input.hybridSplitRatio));
+    const hpwhKWreq = ctx.hpwhNameplateKW * ratio;
+    const minHpwhKW = CENTRAL_HPWH_KW.find(k => k >= hpwhKWreq) ?? CENTRAL_HPWH_KW[CENTRAL_HPWH_KW.length - 1];
+    const recHpwhKW = CENTRAL_HPWH_KW.find(k => k >= hpwhKWreq * 1.25) ?? CENTRAL_HPWH_KW[CENTRAL_HPWH_KW.length - 1];
+
+    const gasBackupMBHreq = (ctx.totalBTUH * (1 - ratio)) / input.gasEfficiency / 1000;
+    const minGasMBH = CENTRAL_GAS_INPUT_MBH.find(m => m >= gasBackupMBHreq) ?? CENTRAL_GAS_INPUT_MBH[CENTRAL_GAS_INPUT_MBH.length - 1];
+    const recGasMBH = CENTRAL_GAS_INPUT_MBH.find(m => m >= gasBackupMBHreq * 1.25) ?? CENTRAL_GAS_INPUT_MBH[CENTRAL_GAS_INPUT_MBH.length - 1];
+
+    const minSize: InstalledCostParams = { storageGal: minTank, kW: minHpwhKW, inputMBH: minGasMBH };
+    const recSize: InstalledCostParams = { storageGal: recTank, kW: recHpwhKW, inputMBH: recGasMBH };
+
+    let best:
+      | (SizingRec & { tank: number; cap: number; capUnit: string; cap2: number; cap2Unit: string })
+      | null = null;
+    for (const tank of CENTRAL_TANK_SIZES) {
+      if (tank < minTank) continue;
+      if (tank > recTank * 2) continue;
+      const size: InstalledCostParams = { storageGal: tank, kW: recHpwhKW, inputMBH: recGasMBH };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) {
+        best = {
+          tank,
+          cap: recHpwhKW,
+          capUnit: "kW HPWH",
+          cap2: recGasMBH,
+          cap2Unit: "MBH gas backup",
+          capCost,
+          annCost,
+          total15,
+        };
+      }
+    }
+
+    return {
+      system: st,
+      reqPeakHourGPH: ctx.peakHourDemand,
+      reqOutputMBH: ctx.totalBTUH / 1000,
+      reqOutputKW: ctx.totalKW,
+      minimum: {
+        tank: minTank,
+        cap: minHpwhKW,
+        capUnit: "kW HPWH",
+        cap2: minGasMBH,
+        cap2Unit: "MBH gas backup",
+        capCost: ic(minSize),
+        annCost: annualCostForSize(minSize),
+      },
+      recommended: {
+        tank: recTank,
+        cap: recHpwhKW,
+        capUnit: "kW HPWH",
+        cap2: recGasMBH,
+        cap2Unit: "MBH gas backup",
+        capCost: ic(recSize),
+        annCost: annualCostForSize(recSize),
+      },
+      lifecycle: best,
+    };
+  }
+
+  // ---------- CENTRAL STEAM-TO-DHW HX (steam + indirect tank) ------------
+  // Same shape as central_indirect but the upstream efficiency is the
+  // combined steam-source × HX effectiveness, not gas burner efficiency.
+  // Reuses CENTRAL_GAS_INPUT_MBH as a proxy for steam HX kBTU/hr output
+  // rating since both ladders cover the same MBH range commercially.
+  if (st === "central_steam_hx") {
+    const minStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction / 50) * 50;
+    const recStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction * 1.25 / 50) * 50;
+
+    const minTank = CENTRAL_TANK_SIZES.find(s => s >= minStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const recTank = CENTRAL_TANK_SIZES.find(s => s >= recStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+
+    const reqOutputMBH = ctx.totalBTUH / 1000;
+    const reqOutputKW = ctx.totalKW;
+
+    const combinedEff = input.steamSourceEfficiency * input.steamHXEffectiveness;
+    const minInputMBH = reqOutputMBH / combinedEff;
+    const recInputMBH = minInputMBH * 1.25;
+    const minCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= minInputMBH) ?? CENTRAL_GAS_INPUT_MBH[CENTRAL_GAS_INPUT_MBH.length - 1];
+    const recCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= recInputMBH) ?? CENTRAL_GAS_INPUT_MBH[CENTRAL_GAS_INPUT_MBH.length - 1];
+
+    let best: (SizingRec & { tank: number; cap: number; capUnit: string }) | null = null;
+    for (const tank of CENTRAL_TANK_SIZES) {
+      if (tank < minTank) continue;
+      if (tank > recTank * 2) continue;
+      const size: InstalledCostParams = { storageGal: tank, inputMBH: recCap };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) {
+        best = { tank, cap: recCap, capUnit: "MBH steam input", capCost, annCost, total15 };
+      }
+    }
+
+    const minSize: InstalledCostParams = { storageGal: minTank, inputMBH: minCap };
+    const recSize: InstalledCostParams = { storageGal: recTank, inputMBH: recCap };
+
+    return {
+      system: st,
+      minimum: { tank: minTank, cap: minCap, capUnit: "MBH steam input", capCost: ic(minSize), annCost: annualCostForSize(minSize) },
+      recommended: { tank: recTank, cap: recCap, capUnit: "MBH steam input", capCost: ic(recSize), annCost: annualCostForSize(recSize) },
+      lifecycle: best,
+      reqPeakHourGPH: ctx.peakHourDemand,
+      reqOutputMBH,
+      reqOutputKW,
+      reqInputMBH_derated: minInputMBH,
+    };
+  }
+
   // ---------- IN-UNIT GAS TANK (DHW-only) and GAS COMBI ----------
   if (st === "inunit_gas_tank" || st === "inunit_combi_gas") {
     const reqFHR = ctx.ashraeProfile.mh;
@@ -371,6 +496,21 @@ function annualCostForSizeImpl(ctx: AutoSizeContext, size: InstalledCostParams):
   }
   if (st === "central_indirect") {
     const eff = input.gasEfficiency * input.indirectHXEffectiveness;
+    return (ctx.annualTotalBTU / (eff * 100000)) * input.gasRate;
+  }
+  if (st === "central_hybrid") {
+    // Annual energy split by hybridSplitRatio: HPWH share at annualCOP,
+    // gas share at gasEfficiency. Mirrors the simpler annual-split
+    // approximation used in the pipeline.
+    const ratio = Math.min(0.95, Math.max(0.05, input.hybridSplitRatio));
+    const hpwhBTU = ctx.annualTotalBTU * ratio;
+    const gasBTU = ctx.annualTotalBTU * (1 - ratio);
+    const hpwhKWh = (hpwhBTU / 3412) / ctx.annualCOP;
+    const gasTherms = gasBTU / (input.gasEfficiency * 100000);
+    return hpwhKWh * input.elecRate + gasTherms * input.gasRate;
+  }
+  if (st === "central_steam_hx") {
+    const eff = input.steamSourceEfficiency * input.steamHXEffectiveness;
     return (ctx.annualTotalBTU / (eff * 100000)) * input.gasRate;
   }
   if (st === "central_resistance") {

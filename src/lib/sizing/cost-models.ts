@@ -36,6 +36,23 @@ export function installedCost(
     // central gas water heater.
     return 1.25 * (15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12);
   }
+  if (systemType === "central_hybrid") {
+    // HPWH primary + gas backup: full HPWH cost on the primary side
+    // (using `kW` as the HPWH nameplate) plus 60% of an equivalent
+    // central_gas plant on the backup side (using `inputMBH` as the gas
+    // backup). The 60% factor reflects that the gas leg is sized for the
+    // peak shortfall rather than the full load — smaller burner, same
+    // venting/controls/manifold complexity. Storage is shared.
+    const hpwhPart = 40000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
+    const gasPart = 0.6 * (15000 + (params.inputMBH ?? 0) * 12);
+    return hpwhPart + gasPart;
+  }
+  if (systemType === "central_steam_hx") {
+    // Steam HX is more expensive than direct-fired boiler — the shell-and-
+    // tube exchanger, condensate handling, and steam controls add ~50%
+    // over an equivalent central_gas burner of the same MBH output rating.
+    return 1.5 * (15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12);
+  }
   if (systemType === "central_resistance") {
     return 10000 + (params.storageGal ?? 0) * 6 + (params.kW ?? 0) * 150;
   }

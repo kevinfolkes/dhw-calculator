@@ -12,8 +12,75 @@ export function SizingTab({ result }: { result: CalcResult }) {
   // takes its place. We detect that case by inspecting the tankless-only
   // outputs (zero for every other system type).
   const isCentralTankless = result.centralTanklessCapacityGPM > 0;
+  // Hybrid + steam-HX features are detected from result fields populated
+  // only for those system types — keeps the tab signature backward-
+  // compatible with the existing DhwCalculator call site that only passes
+  // `result`. The pipeline zeroes `hybridHpwhBTUH` and
+  // `steamCombinedEfficiency` for unrelated system types.
+  const isCentralHybrid = result.hybridHpwhBTUH > 0;
+  const isCentralSteamHX = result.steamCombinedEfficiency > 0;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {isCentralHybrid && (
+        <Card accent="#a3c8a8">
+          <CardHeader>
+            <CardTitle>Hybrid Plant Split (HPWH primary + gas backup)</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard
+              label="HPWH design output"
+              value={fmt(result.hybridHpwhBTUH / 1000)}
+              unit="MBH"
+              sub="HPWH share of total design load"
+              accent="#7DD3A3"
+            />
+            <MetricCard
+              label="Gas backup output"
+              value={fmt(result.hybridGasBTUH / 1000)}
+              unit="MBH"
+              sub="covers remaining peak shortfall"
+              accent="#F59E0B"
+            />
+            <MetricCard
+              label="Gas backup input"
+              value={fmt(result.hybridGasInputMBH)}
+              unit="MBH"
+              sub="output ÷ gas efficiency"
+              accent="#F59E0B"
+            />
+          </Grid>
+        </Card>
+      )}
+
+      {isCentralSteamHX && (
+        <Card accent="#b8a3d3">
+          <CardHeader>
+            <CardTitle>Steam HX Sizing</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard
+              label="Combined source × HX η"
+              value={`${(result.steamCombinedEfficiency * 100).toFixed(1)}%`}
+              sub="upstream steam losses × HX transfer"
+              accent="#b8a3d3"
+            />
+            <MetricCard
+              label="Required steam input"
+              value={fmt(result.gasInputBTUH / 1000)}
+              unit="MBH"
+              sub="total design load ÷ combined η"
+              accent="#b8a3d3"
+            />
+            <MetricCard
+              label="HX approach feasibility"
+              value={result.steamApproachOK ? "✓ OK" : "✗ violates"}
+              sub="storage setpoint must be ≥20°F below steam saturation"
+              accent={result.steamApproachOK ? "var(--accent-emerald)" : "var(--accent-red)"}
+            />
+          </Grid>
+        </Card>
+      )}
+
       {isCentralTankless ? (
         <Card accent="#e8975c">
           <CardHeader>

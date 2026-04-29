@@ -130,6 +130,11 @@ export interface SizingRec {
   capCost: number;
   annCost: number;
   total15?: number;
+  /** Optional secondary equipment value (e.g. for hybrid systems where the
+   *  primary `cap` is HPWH kW and `cap2` is the gas-backup MBH). */
+  cap2?: number | string;
+  /** Unit label for `cap2` (e.g. "MBH input"). */
+  cap2Unit?: string;
   [k: string]: unknown;
 }
 
@@ -237,4 +242,28 @@ export interface CalcResult {
    *  effectiveness). For other systems mirrors `gasEfficiency` so it can be
    *  surfaced uniformly in the equipment / calculations tabs. */
   effectiveGasEfficiency: number;
+  /** HPWH-side design BTU/hr for `central_hybrid` (= split_ratio × totalBTUH).
+   *  Zero for other system types. */
+  hybridHpwhBTUH: number;
+  /** Gas-backup output BTU/hr for `central_hybrid` (= (1 − split_ratio) ×
+   *  totalBTUH). Zero for other system types. */
+  hybridGasBTUH: number;
+  /** Required gas-backup input rating (MBH) for `central_hybrid`
+   *  (= hybridGasBTUH ÷ gasEfficiency ÷ 1000). Zero for other system types. */
+  hybridGasInputMBH: number;
+  /** Combined source × HX efficiency for `central_steam_hx`
+   *  (= steamSourceEfficiency × steamHXEffectiveness). Equal to
+   *  `effectiveGasEfficiency` for that system; defaults to `gasEfficiency`
+   *  for other system types so it can be surfaced uniformly. */
+  steamCombinedEfficiency: number;
+  /** True when the storage setpoint is at least 20°F below the steam
+   *  saturation temperature at the supplied pressure — i.e. the HX can
+   *  physically deliver the design rise. Always true for non-steam systems. */
+  steamApproachOK: boolean;
+  /** Total annual electric energy attributable to the configured system
+   *  type (kWh). For pure-gas systems (central_gas, central_indirect,
+   *  central_steam_hx, central_gas_tankless, in-unit gas) this is 0; for
+   *  HPWH and resistance systems it equals the per-tech annual; for
+   *  `central_hybrid` it is the HPWH-side share. */
+  annualElectricKWh: number;
 }

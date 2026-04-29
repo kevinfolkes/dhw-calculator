@@ -40,6 +40,8 @@ export function CalculationsTab({ inputs, result }: Props) {
   const isCentral = sys.topology === "central";
   const isCentralTankless = inputs.systemType === "central_gas_tankless";
   const isCentralIndirect = inputs.systemType === "central_indirect";
+  const isCentralHybrid = inputs.systemType === "central_hybrid";
+  const isCentralSteamHX = inputs.systemType === "central_steam_hx";
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
@@ -418,6 +420,73 @@ export function CalculationsTab({ inputs, result }: Props) {
             </Prose>
           </>
         )}
+        {isCentralHybrid && (
+          <>
+            <Prose>
+              Central hybrid plants split the design load between an HPWH primary
+              (carrying the baseload + shoulder seasons) and a gas backup
+              (covering peak hour + cold-snap recovery). The split ratio
+              determines how much capacity each side carries; both pieces of
+              equipment exist on the plant.
+            </Prose>
+            <Formula>
+              split_ratio = <Result>{inputs.hybridSplitRatio.toFixed(2)}</Result> · backup ={" "}
+              <Em>{inputs.hybridGasBackupType}</Em>
+            </Formula>
+            <Formula>
+              hpwh_BTUH = split_ratio × total_BTUH = {inputs.hybridSplitRatio.toFixed(2)} ×{" "}
+              {fmt(result.totalBTUH)} = <Result>{fmt(result.hybridHpwhBTUH)}</Result> BTU/hr
+            </Formula>
+            <Formula>
+              gas_BTUH = (1 − split_ratio) × total_BTUH ={" "}
+              {(1 - inputs.hybridSplitRatio).toFixed(2)} × {fmt(result.totalBTUH)} ={" "}
+              <Result>{fmt(result.hybridGasBTUH)}</Result> BTU/hr
+            </Formula>
+            <Formula>
+              gas_input_MBH = gas_BTUH ÷ gas_η ÷ 1000 = {fmt(result.hybridGasBTUH)} ÷{" "}
+              {inputs.gasEfficiency.toFixed(2)} ÷ 1000 ={" "}
+              <Result>{fmt(result.hybridGasInputMBH, 1)}</Result> MBH
+            </Formula>
+            <Prose>
+              Annual energy uses the simpler annual-split approximation: HPWH share runs at the
+              climate-weighted annual COP, gas share at gas_η. The monthly model below mirrors the
+              same split with monthly COP applied to the HPWH share.
+            </Prose>
+          </>
+        )}
+        {isCentralSteamHX && (
+          <>
+            <Prose>
+              Central steam-to-DHW HX systems route building or district steam through a shell-and-
+              tube heat exchanger that heats potable water in an indirect-fired storage tank. The
+              effective system efficiency multiplies the upstream steam-source efficiency (district
+              mains losses + plant, or in-building boiler + distribution) by the HX transfer
+              effectiveness.
+            </Prose>
+            <Formula>
+              combined_η = source_η × HX_eff = {inputs.steamSourceEfficiency.toFixed(2)} ×{" "}
+              {inputs.steamHXEffectiveness.toFixed(2)} ={" "}
+              <Result>{result.steamCombinedEfficiency.toFixed(3)}</Result>
+            </Formula>
+            <Formula>
+              required_steam_input_MBH = total_BTUH ÷ (combined_η × 1000) ={" "}
+              {fmt(result.totalBTUH)} ÷ ({result.steamCombinedEfficiency.toFixed(3)} × 1000) ={" "}
+              <Result>{fmt(result.gasInputBTUH / 1000)}</Result> MBH
+            </Formula>
+            <Formula>
+              steam_sat_T(P={inputs.steamSupplyPressurePSIG} PSIG) ≈ 227 + ({inputs.steamSupplyPressurePSIG} − 5) × 2.3 ={" "}
+              <Result>{(227 + (inputs.steamSupplyPressurePSIG - 5) * 2.3).toFixed(0)}</Result>°F
+              · approach_OK ={" "}
+              <Result>{result.steamApproachOK ? "✓" : "✗"}</Result> (need storage_setpoint + 20 &lt;
+              sat_T)
+            </Formula>
+            <Prose>
+              Annual energy is reported as steam-therm equivalents using the gas-rate / gas-carbon
+              factors as proxies. Real district-steam pricing is typically $/MMBtu and carbon
+              depends on the upstream plant fuel mix — see the Methodology tab caveat.
+            </Prose>
+          </>
+        )}
         {inputs.systemType === "central_resistance" && (
           <>
             <Prose>Resistance converts 1:1 — no efficiency derate needed.</Prose>
@@ -769,6 +838,28 @@ export function CalculationsTab({ inputs, result }: Props) {
             therms = total_BTU ÷ (gas_η × HX_eff × 100,000) ={" "}
             <Result>{fmt(result.annualGasTherms)}</Result> therms · cost{" "}
             <Result>{fmtUSD(result.annualGasCost)}</Result>
+          </Formula>
+        )}
+        {isCentralHybrid && (
+          <>
+            <Formula>
+              gas_therms = (1 − split) × total_BTU ÷ (gas_η × 100,000) ={" "}
+              <Result>{fmt(result.annualGasTherms)}</Result> therms · cost{" "}
+              <Result>{fmtUSD(result.annualGasCost)}</Result>
+            </Formula>
+            <Formula>
+              hpwh_kWh = split × total_BTU ÷ 3412 ÷ annualCOP + swing_tank ={" "}
+              <Result>{fmt(result.annualHPWHKWh_total)}</Result> kWh (annualCOP ={" "}
+              {result.annualCOP.toFixed(2)}) · cost{" "}
+              <Result>{fmtUSD(result.annualHPWHCost)}</Result>
+            </Formula>
+          </>
+        )}
+        {isCentralSteamHX && (
+          <Formula>
+            steam_therms = total_BTU ÷ (source_η × HX_eff × 100,000) ={" "}
+            <Result>{fmt(result.annualGasTherms)}</Result> therms · cost{" "}
+            <Result>{fmtUSD(result.annualGasCost)}</Result> (proxy — district steam is often $/MMBtu)
           </Formula>
         )}
         {inputs.systemType === "central_resistance" && (

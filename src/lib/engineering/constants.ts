@@ -279,3 +279,12 @@ export const CENTRAL_GAS_TANKLESS_INPUT_MBH = [200, 400, 600, 1000, 1500, 2000, 
 export type CentralGasTanklessInput = (typeof CENTRAL_GAS_TANKLESS_INPUT_MBH)[number];
 export const CENTRAL_ELEC_KW = [12, 18, 27, 36, 54, 72, 108, 144, 180, 216, 288] as const;
 export const CENTRAL_HPWH_KW = [15, 20, 30, 40, 60, 80, 120, 160, 200, 300] as const;
+
+/**
+ * Saturation temperature of steam at 5 PSIG (≈19.7 PSIA), used to flag
+ * infeasible storage setpoints on `central_steam_hx`. The HX cannot heat
+ * potable above (steam_sat_temp − ~20°F approach), so a 140°F setpoint with
+ * 5 PSIG steam (~227°F sat) is comfortable, but a higher setpoint or a
+ * lower supply pressure can violate the approach.
+ */
+export const STEAM_SATURATION_TEMP_F_AT_5PSIG = 227;

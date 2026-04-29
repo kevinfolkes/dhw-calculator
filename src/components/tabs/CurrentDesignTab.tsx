@@ -213,6 +213,8 @@ export function CurrentDesignTab({ inputs, result }: Props) {
   const isCentral = sys.topology === "central";
   const isCentralTankless = inputs.systemType === "central_gas_tankless";
   const isCentralIndirect = inputs.systemType === "central_indirect";
+  const isCentralHybrid = inputs.systemType === "central_hybrid";
+  const isCentralSteamHX = inputs.systemType === "central_steam_hx";
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
@@ -453,6 +455,75 @@ export function CurrentDesignTab({ inputs, result }: Props) {
                   <StatusBadge
                     ok={meets}
                     text={meets ? "≥ design load" : "below design load"}
+                  />
+                }
+                accent={meets ? A_OK : A_BAD}
+              />
+            </Grid>
+          );
+        })()}
+
+        {isCentral && isCentralHybrid && (
+          <Grid cols={3}>
+            <MetricCard
+              label="HPWH primary"
+              value={fmt(result.hybridHpwhBTUH / 1000)}
+              unit="MBH (output)"
+              sub={`${(inputs.hybridSplitRatio * 100).toFixed(0)}% of design · COP ${result.cop.toFixed(2)}`}
+              accent={A_HPWH}
+            />
+            <MetricCard
+              label="Gas backup input"
+              value={fmt(result.hybridGasInputMBH)}
+              unit="MBH"
+              sub={`${(((1 - inputs.hybridSplitRatio) * 100)).toFixed(0)}% peak shortfall · ${inputs.hybridGasBackupType === "boiler" ? "boiler" : "condensing tank"}`}
+              accent={A_GAS}
+            />
+            <MetricCard
+              label="Spec reality check"
+              value=""
+              sub={
+                <StatusBadge
+                  ok={result.hybridHpwhBTUH + result.hybridGasBTUH >= result.totalBTUH * 0.999}
+                  text="HPWH + gas covers design load"
+                />
+              }
+              accent={A_OK}
+            />
+          </Grid>
+        )}
+
+        {isCentral && isCentralSteamHX && (() => {
+          const outputBTUH = result.gasInputBTUH * result.effectiveGasEfficiency;
+          const meets = outputBTUH >= result.totalBTUH && result.steamApproachOK;
+          return (
+            <Grid cols={3}>
+              <MetricCard
+                label="Steam HX input"
+                value={fmt(result.gasInputBTUH / 1000)}
+                unit="MBH"
+                sub={`combined η ${(result.steamCombinedEfficiency * 100).toFixed(1)}%`}
+                accent="#b8a3d3"
+              />
+              <MetricCard
+                label="Source × HX η"
+                value={`${(result.steamCombinedEfficiency * 100).toFixed(0)}%`}
+                sub={`source ${(inputs.steamSourceEfficiency * 100).toFixed(0)}% × HX ${(inputs.steamHXEffectiveness * 100).toFixed(0)}%`}
+                accent="#b8a3d3"
+              />
+              <MetricCard
+                label="Spec reality check"
+                value=""
+                sub={
+                  <StatusBadge
+                    ok={meets}
+                    text={
+                      !result.steamApproachOK
+                        ? "violates HX approach"
+                        : meets
+                        ? "≥ design load"
+                        : "below design load"
+                    }
                   />
                 }
                 accent={meets ? A_OK : A_BAD}
@@ -837,38 +908,75 @@ export function CurrentDesignTab({ inputs, result }: Props) {
           {isCentral &&
             (inputs.systemType === "central_gas" ||
               isCentralTankless ||
-              isCentralIndirect) && (
+              isCentralIndirect ||
+              isCentralSteamHX) && (
               <>
                 <MetricCard
-                  label="Annual gas"
+                  label={isCentralSteamHX ? "Annual steam (therm-equiv.)" : "Annual gas"}
                   value={fmtUSD(result.annualGasCost)}
                   unit="/yr"
-                  sub={`${fmt(result.annualGasTherms)} therms`}
+                  sub={`${fmt(result.annualGasTherms)} therms${isCentralSteamHX ? " (proxy)" : ""}`}
                   accent={A_GAS}
                 />
                 <MetricCard
                   label="Annual carbon"
                   value={fmt(result.annualGasCarbon)}
                   unit="lb CO₂"
+                  sub={isCentralSteamHX ? "approx — depends on plant fuel mix" : undefined}
                   accent={A_GAS}
                 />
                 <MetricCard
-                  label={isCentralIndirect ? "Combined system η" : "Annual kWh-equiv."}
+                  label={
+                    isCentralIndirect
+                      ? "Combined system η"
+                      : isCentralSteamHX
+                      ? "Source × HX η"
+                      : "Annual kWh-equiv."
+                  }
                   value={
                     isCentralIndirect
                       ? `${(result.effectiveGasEfficiency * 100).toFixed(1)}%`
+                      : isCentralSteamHX
+                      ? `${(result.steamCombinedEfficiency * 100).toFixed(1)}%`
                       : fmt(result.annualGasTherms * 29.3)
                   }
-                  unit={isCentralIndirect ? undefined : "kWh"}
+                  unit={isCentralIndirect || isCentralSteamHX ? undefined : "kWh"}
                   sub={
                     isCentralIndirect
                       ? `gas η × HX ${(inputs.indirectHXEffectiveness * 100).toFixed(0)}%`
+                      : isCentralSteamHX
+                      ? `source ${(inputs.steamSourceEfficiency * 100).toFixed(0)}% × HX ${(inputs.steamHXEffectiveness * 100).toFixed(0)}%`
                       : "1 therm ≈ 29.3 kWh"
                   }
                   accent={A_GAS}
                 />
               </>
             )}
+          {isCentral && isCentralHybrid && (
+            <>
+              <MetricCard
+                label="Annual gas (backup)"
+                value={fmtUSD(result.annualGasCost)}
+                unit="/yr"
+                sub={`${fmt(result.annualGasTherms)} therms · ${((1 - inputs.hybridSplitRatio) * 100).toFixed(0)}% share`}
+                accent={A_GAS}
+              />
+              <MetricCard
+                label="Annual electric (HPWH)"
+                value={fmtUSD(result.annualHPWHCost)}
+                unit="/yr"
+                sub={`${fmt(result.annualHPWHKWh_total)} kWh · ${(inputs.hybridSplitRatio * 100).toFixed(0)}% share · COP ${result.annualCOP.toFixed(2)}`}
+                accent={A_HPWH}
+              />
+              <MetricCard
+                label="Annual carbon (combined)"
+                value={fmt(result.annualGasCarbon + result.annualHPWHCarbon)}
+                unit="lb CO₂"
+                sub={`gas ${fmt(result.annualGasCarbon)} + electric ${fmt(result.annualHPWHCarbon)}`}
+                accent={A_HPWH}
+              />
+            </>
+          )}
           {isCentral && inputs.systemType === "central_resistance" && (
             <>
               <MetricCard

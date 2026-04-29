@@ -588,6 +588,15 @@ const SIZED_VARIABLES: Record<SystemTypeKey, SizedVariable[]> = {
     { label: "Storage tank (gal)", detail: "Same standard sizes as central gas — indirect-fired or paired with plate HX.", constraint: "peak_hour × 1.25 ÷ 0.75" },
     { label: "Boiler input (MBH)", detail: "Same standard sizes as central gas. Sized for the combined gas η × HX effectiveness so the potable side meets recovery.", constraint: "recovery_BTUH ÷ (gas_efficiency × HX_effectiveness)" },
   ],
+  central_hybrid: [
+    { label: "Storage tank (gal)", detail: "Same standard sizes as central gas / central HPWH.", constraint: "peak_hour × 1.25 ÷ 0.75" },
+    { label: "HPWH primary (kW)", detail: "From 15 / 20 / 30 / 40 / 60 / 80 / 120 / 160 / 200 / 300 kW. Carries the baseload share of the design load (split_ratio × total_kW), then derated for cold ambient capacity factor.", constraint: "(split_ratio × total_kW) ÷ COP ÷ capacity_factor" },
+    { label: "Gas backup (MBH)", detail: "From 100 / 150 / 200 / 300 / 400 / 500 / 750 / 1000 / 1500 / 2000 MBH. Covers the remaining (1 − split_ratio) × total_BTUH for winter peaks and rapid recovery.", constraint: "(1 − split_ratio) × total_BTUH ÷ gas_efficiency" },
+  ],
+  central_steam_hx: [
+    { label: "Storage tank (gal)", detail: "Same standard sizes as central gas — indirect-fired tank fed by the steam HX.", constraint: "peak_hour × 1.25 ÷ 0.75" },
+    { label: "Steam HX rating (MBH)", detail: "Reuses the central-gas MBH ladder as a proxy for steam HX kBTU/hr output. Sized for the combined steam-source × HX effectiveness so the potable side meets recovery.", constraint: "recovery_BTUH ÷ (steam_source_eff × HX_effectiveness)" },
+  ],
   central_resistance: [
     { label: "Storage tank (gal)", detail: "Same standard sizes as central gas.", constraint: "peak_hour × 1.25 ÷ 0.75" },
     { label: "Electric element (kW)", detail: "From 12 / 18 / 27 / 36 / 54 / 72 / 108 / 144 / 180 / 216 / 288 kW.", constraint: "total_BTUH ÷ 3412" },
@@ -620,6 +629,8 @@ const HUMAN_KEYS: Record<string, string> = {
   tankGal: "Tank size (gal)",
   cap: "Capacity",
   capUnit: "Cap unit",
+  cap2: "Secondary capacity",
+  cap2Unit: "Secondary cap unit",
   inputMBH: "Input (MBH)",
   subtype: "Venting",
   system: "System",
@@ -640,6 +651,8 @@ function recommendedMarginLabel(st: SystemTypeKey): string {
     case "central_gas": return "+25% MBH";
     case "central_gas_tankless": return "+25% peak GPM";
     case "central_indirect": return "+25% MBH (HX-derated)";
+    case "central_hybrid": return "+25% HPWH + gas";
+    case "central_steam_hx": return "+25% MBH (HX-derated)";
     case "central_resistance": return "+20% kW";
     case "central_hpwh": return "+25% nameplate";
     case "inunit_gas_tank": return "+15% FHR";
@@ -655,6 +668,8 @@ function recommendedRuleLabel(st: SystemTypeKey): string {
     case "central_gas": return "Smallest input MBH ≥ 1.25 × minimum (absorbs off-design + diversity error)";
     case "central_gas_tankless": return "Smallest module MBH whose capacity at design rise ≥ 1.25 × required peak GPM";
     case "central_indirect": return "Smallest boiler MBH ≥ 1.25 × minimum, where minimum derates by gas η × HX effectiveness";
+    case "central_hybrid": return "HPWH nameplate sized to ≥ 1.25 × (split_ratio × total_kW) ÷ capacity_factor; gas backup MBH ≥ 1.25 × (1 − split_ratio) × total_BTUH ÷ gas_efficiency";
+    case "central_steam_hx": return "Smallest steam HX MBH ≥ 1.25 × minimum, where minimum derates by steam_source_eff × HX_effectiveness";
     case "central_resistance": return "Smallest kW ≥ 1.20 × minimum";
     case "central_hpwh": return "Smallest nameplate ≥ 1.25 × minimum (absorbs cold-ambient derate)";
     case "inunit_gas_tank": return "Smallest tank whose condensing FHR ≥ 1.15 × peak-hour per unit";

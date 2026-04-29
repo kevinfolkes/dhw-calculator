@@ -20,6 +20,7 @@ import {
   MONTH_DAYS,
   MONTHS,
   NG_LB_CO2_PER_THERM,
+  STEAM_SATURATION_TEMP_F_AT_5PSIG,
 } from "@/lib/engineering/constants";
 import {
   deriveInletWaterF,
@@ -48,6 +49,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     systemType, gasTankSize, gasTankType, gasTankSetpointF,
     gasTanklessInput, tanklessDesignRiseF, tanklessSimultaneousFixtures, gasTanklessSetpointF,
     centralGasTanklessInput, indirectHXEffectiveness,
+    hybridSplitRatio, steamSourceEfficiency, steamHXEffectiveness, steamSupplyPressurePSIG,
     bufferTankEnabled,
   } = input;
 
@@ -85,6 +87,11 @@ export function runCalc(input: DhwInputs): CalcResult {
   // tabs don't claim a phantom tank.
   const isCentralTankless = systemType === "central_gas_tankless";
   const isCentralIndirect = systemType === "central_indirect";
+  const isCentralHybrid = systemType === "central_hybrid";
+  const isCentralSteamHX = systemType === "central_steam_hx";
+  // Clamp the hybrid split ratio once so every downstream consumer
+  // (annual rollups, monthly rows, auto-sizer) uses the same value.
+  const hybridSafeRatio = Math.min(0.95, Math.max(0.05, hybridSplitRatio));
   const storageCoef = ashraeProfile.storageFrac;
   const recoveryCoef = ashraeProfile.recoveryFrac;
   const usableFraction = 0.75;
@@ -104,9 +111,21 @@ export function runCalc(input: DhwInputs): CalcResult {
   // ---- TECH COMPARISON ---------------------------------------------------
   // For `central_indirect`, the boiler-side input must overcome both the
   // burner inefficiency and the heat-exchanger transfer derate from boiler
-  // loop to potable. For all other systems the HX effectiveness is 1.0.
+  // loop to potable. For `central_steam_hx`, the upstream steam source has
+  // its own losses (district mains or in-building boiler + distribution),
+  // and the HX has a separate transfer effectiveness. For all other systems
+  // the combined HX effectiveness is 1.0.
+  const steamCombinedEfficiencyRaw = steamSourceEfficiency * steamHXEffectiveness;
+  // Only surface a non-zero `steamCombinedEfficiency` on the result when the
+  // selected system type actually uses steam — otherwise it reads as 0 so
+  // downstream tabs can detect the steam case by feature flag rather than
+  // string-matching on `systemType` (avoids needing `inputs` plumbed into
+  // tabs that only receive `result`).
+  const steamCombinedEfficiency = isCentralSteamHX ? steamCombinedEfficiencyRaw : 0;
   const effectiveGasEfficiency = isCentralIndirect
     ? gasEfficiency * indirectHXEffectiveness
+    : isCentralSteamHX
+    ? steamCombinedEfficiencyRaw
     : gasEfficiency;
   const gasInputBTUH = totalBTUH / effectiveGasEfficiency;
   const resistanceInputKW = totalKW;
@@ -122,10 +141,24 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualTotalBTU = annualDemandBTU + annualRecircBTU;
   const annualCOP = hpwhCOP(climate.mechRoomAnnual, effectiveInletF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
 
-  const annualGasTherms = annualTotalBTU / (effectiveGasEfficiency * 100000);
+  // Pure-fuel annual rollups. For `central_hybrid` we override the gas + HPWH
+  // annual figures below so therms reflect only the gas-side share and
+  // kWh reflects only the HPWH-side share. The resistance figures stay as
+  // the "if you did this all in resistance" comparison row used by the
+  // tech-comparison cards.
+  let annualGasTherms = annualTotalBTU / (effectiveGasEfficiency * 100000);
   const annualResistanceKWh = annualTotalBTU / 3412;
-  const annualHPWHKWh_total =
+  let annualHPWHKWh_total =
     annualTotalBTU / 3412 / annualCOP + (swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0);
+
+  if (isCentralHybrid) {
+    const hybridGasBTU = annualTotalBTU * (1 - hybridSafeRatio);
+    const hybridHpwhBTU = annualTotalBTU * hybridSafeRatio;
+    annualGasTherms = hybridGasBTU / (gasEfficiency * 100000);
+    annualHPWHKWh_total =
+      hybridHpwhBTU / 3412 / annualCOP +
+      (swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0);
+  }
 
   const annualGasCost = annualGasTherms * gasRate;
   const annualResistanceCost = annualResistanceKWh * elecRate;
@@ -135,6 +168,18 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualGasCarbon = annualGasTherms * NG_LB_CO2_PER_THERM;
   const annualResistanceCarbon = annualResistanceKWh * ef;
   const annualHPWHCarbon = annualHPWHKWh_total * ef;
+
+  // Unified electric annual: aggregates whichever electric stream applies
+  // for the configured system. Gas-only systems return 0.
+  const annualElectricKWh =
+    systemType === "central_resistance"
+      ? annualResistanceKWh
+      : systemType === "central_hpwh" ||
+        systemType === "central_hybrid" ||
+        systemType === "inunit_hpwh" ||
+        systemType === "inunit_combi"
+      ? annualHPWHKWh_total
+      : 0;
 
   // ---- IN-UNIT COMBI (HPWH + hydronic fan coil) --------------------------
   const designDeltaT = indoorDesignF - climate.heatDB;
@@ -348,6 +393,37 @@ export function runCalc(input: DhwInputs): CalcResult {
   const centralTanklessMetsDemand =
     centralTanklessCapacityGPM >= centralTanklessPeakGPMRequired;
 
+  // ---- CENTRAL HYBRID (HPWH baseload + gas peak/backup) ------------------
+  // Split the design BTU/hr between an HPWH "primary" sized to the chosen
+  // ratio and a gas backup sized for the remainder. Both pieces of equipment
+  // exist on the plant and both contribute to annual energy. Storage gallons
+  // mirror the central_gas / central_hpwh sizing.
+  //
+  // Implementation note: annual energy uses the SIMPLER annual-split
+  // approximation called out in the plan — split annualTotalBTU by the
+  // hybridSplitRatio rather than running a full month-by-month bin model
+  // that re-allocates load when HPWH capacity drops in cold ambient. This
+  // keeps the pipeline diff small; the monthly rows below mirror the same
+  // split with monthly COP applied to the HPWH share.
+  const hybridHpwhBTUH = isCentralHybrid ? totalBTUH * hybridSafeRatio : 0;
+  const hybridGasBTUH = isCentralHybrid ? totalBTUH * (1 - hybridSafeRatio) : 0;
+  const hybridGasInputMBH = isCentralHybrid
+    ? hybridGasBTUH / gasEfficiency / 1000
+    : 0;
+
+  // ---- CENTRAL STEAM-TO-DHW HX (approach feasibility check) --------------
+  // Steam at 5 PSIG saturates at ~227°F. The HX cannot heat potable above
+  // (sat_T − ~20°F approach), so we flag setpoints that violate the
+  // approach. We linearize the saturation curve coarsely from 5 PSIG to 15
+  // PSIG (≈250°F): each PSIG above 5 adds ~2.3°F to saturation. Below 5
+  // PSIG we extrapolate — at 2 PSIG (~219°F) a 140°F setpoint still has 79°F
+  // approach margin so the warning won't fire under typical inputs.
+  const steamSatTempF =
+    STEAM_SATURATION_TEMP_F_AT_5PSIG + (steamSupplyPressurePSIG - 5) * 2.3;
+  const steamApproachOK = isCentralSteamHX
+    ? storageSetpointF + 20 < steamSatTempF
+    : true;
+
   // ---- MONTHLY MODEL -----------------------------------------------------
   const currentSysDef = SYSTEM_TYPES[systemType];
   const isInUnitGas_m = currentSysDef.topology === "inunit" && currentSysDef.tech === "gas";
@@ -425,6 +501,39 @@ export function runCalc(input: DhwInputs): CalcResult {
       dhwEnergy = monthTotalBTU / (gasEfficiency * indirectHXEffectiveness * 100000);
       unit = "therms";
       dhwCost = dhwEnergy * gasRate;
+    } else if (systemType === "central_hybrid") {
+      // HPWH + gas backup: split monthly BTU by the hybridSplitRatio.
+      // HPWH share runs through the climate-adjusted COP (electric). Gas
+      // share runs through gasEfficiency (therms). The energy-tab unit is
+      // chosen by which fuel dominates the split — by convention we report
+      // therms (gas) because the recirc loss + peak coverage is the gas
+      // contribution most operators care about, but BOTH annual totals are
+      // surfaced in the result so the Equipment / Current Design tabs can
+      // show electricity and therms together.
+      const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
+      const monthHpwhBTU = monthTotalBTU * hybridSafeRatio;
+      const monthGasBTU = monthTotalBTU * (1 - hybridSafeRatio);
+      const monthHpwhKWh = monthHpwhBTU / 3412 / monthCOP_central;
+      const monthGasTherms = monthGasBTU / (gasEfficiency * 100000);
+      // Combine electricity (kWh) and gas (therms) into a kWh-equivalent
+      // for the monthly row's `dhwEnergy` so totals are non-zero, but mark
+      // the unit "therms" since that's what the bulk of the annual energy
+      // tab expects for a gas-bearing system. The Energy tab displays gas
+      // and electric separately based on systemType; the per-row total
+      // here is informational.
+      unit = "therms";
+      dhwEnergy = monthGasTherms + monthHpwhKWh / 29.3;
+      dhwCost = monthGasTherms * gasRate + monthHpwhKWh * elecRate;
+    } else if (systemType === "central_steam_hx") {
+      // Steam HX: combined efficiency = steamSourceEff × steamHXEff. We
+      // report annual energy as "steam therms" (a gas-equivalent unit) so
+      // the cost / carbon cards can reuse the existing therms infrastructure.
+      // See Methodology tab for the caveat that district steam is often
+      // billed in $/MMBtu with carbon driven by plant fuel mix.
+      const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
+      dhwEnergy = monthTotalBTU / (steamCombinedEfficiencyRaw * 100000);
+      unit = "therms";
+      dhwCost = dhwEnergy * gasRate;
     } else if (systemType === "central_resistance") {
       const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
       dhwEnergy = monthTotalBTU / 3412;
@@ -489,6 +598,14 @@ export function runCalc(input: DhwInputs): CalcResult {
       effectiveMonthCOP_dhw = gasEfficiency;
     } else if (systemType === "central_indirect") {
       effectiveMonthCOP_dhw = gasEfficiency * indirectHXEffectiveness;
+    } else if (systemType === "central_hybrid") {
+      // Blended effective efficiency: HPWH side runs at monthCOP_central,
+      // gas side at gasEfficiency. Weight by the split ratio so the row
+      // reports a single number consistent with the ratio.
+      effectiveMonthCOP_dhw =
+        hybridSafeRatio * monthCOP_central + (1 - hybridSafeRatio) * gasEfficiency;
+    } else if (systemType === "central_steam_hx") {
+      effectiveMonthCOP_dhw = steamCombinedEfficiencyRaw;
     } else if (systemType === "central_resistance") {
       effectiveMonthCOP_dhw = 1.0;
     } else if (systemType === "central_hpwh") {
@@ -629,6 +746,12 @@ export function runCalc(input: DhwInputs): CalcResult {
     centralTanklessCapacityGPM,
     centralTanklessMetsDemand,
     effectiveGasEfficiency,
+    hybridHpwhBTUH,
+    hybridGasBTUH,
+    hybridGasInputMBH,
+    steamCombinedEfficiency,
+    steamApproachOK,
+    annualElectricKWh,
   };
 }
 

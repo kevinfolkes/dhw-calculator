@@ -11,6 +11,8 @@ export type SystemTypeKey =
   | "central_gas"
   | "central_gas_tankless"
   | "central_indirect"
+  | "central_hybrid"
+  | "central_steam_hx"
   | "central_resistance"
   | "central_hpwh"
   | "inunit_gas_tank"
@@ -70,6 +72,30 @@ export const SYSTEM_TYPES: Record<SystemTypeKey, SystemTypeDef> = {
       "Central plant where one or more hydronic boilers heat a glycol/water loop that feeds an indirect-fired storage tank (or plate heat exchanger) on the potable side. Common in older urban high-rise where a single boiler serves both heating and DHW.",
     archetypes: "Weil-McLain Ultra + indirect HX, Lochinvar FTXL + Aerco SmartPlate, Aerco Benchmark + plate HX, Riello + indirect tank",
     color: "#d8924e",
+  },
+  central_hybrid: {
+    label: "Central Hybrid (HPWH + gas backup) + Recirc",
+    short: "Central Hybrid",
+    topology: "central",
+    tech: "hpwh",
+    hasRecirc: true,
+    hasSpaceHeating: false,
+    description:
+      "All-electric HPWH carries the baseload and shoulder seasons; a gas-fired backup (condensing tank or boiler) covers winter peak hour and rapid recovery. Standard transitional electrification configuration in cold climates (4A+) where a pure HPWH plant would oversize for peak hour or fail during compressor lockout.",
+    archetypes: "Mitsubishi QAHV + Lochinvar Armor backup, Colmac CxV + AO Smith Cyclone, Aermec + boiler, SANCO2 + condensing gas tank",
+    color: "#a3c8a8",
+  },
+  central_steam_hx: {
+    label: "Central Steam-to-DHW HX + Recirc",
+    short: "Central Steam HX",
+    topology: "central",
+    tech: "gas",
+    hasRecirc: true,
+    hasSpaceHeating: false,
+    description:
+      "Steam from a district loop (Con Edison-style) or in-building boiler is routed through a shell-and-tube heat exchanger that heats potable water in an indirect-fired storage tank. Standard in older urban high-rise multifamily (NYC, Boston, Chicago).",
+    archetypes: "PVI TurboPower with steam coil, Bock SteamMaster, Aerco SmartPlate Steam, Cleaver-Brooks shell-and-tube",
+    color: "#b8a3d3",
   },
   central_resistance: {
     label: "Central Electric Resistance + Recirc",

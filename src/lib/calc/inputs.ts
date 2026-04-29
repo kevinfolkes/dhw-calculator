@@ -126,6 +126,35 @@ export interface DhwInputs {
    *  indirect-fired tanks. */
   indirectHXEffectiveness: number;
 
+  // Central hybrid (HPWH baseload + gas peak/backup)
+  /** Fraction of peak DHW load assigned to the HPWH at design conditions.
+   *  Remainder goes to the gas backup. Range 0.40–0.90 — values below 0.40
+   *  defeat the HPWH benefit, values above 0.90 leave the gas backup
+   *  undersized for cold-snap recovery. Default 0.65 reflects typical CZ4A+
+   *  electrification practice (HPWH carries shoulder, gas covers winter peaks). */
+  hybridSplitRatio: number;
+  /** Type of gas backup paired with the HPWH on a `central_hybrid` plant.
+   *  Both options use the same gas-efficiency math; the distinction drives the
+   *  cost model (boiler is more expensive than a condensing tank) and the
+   *  archetype label. */
+  hybridGasBackupType: "tank" | "boiler";
+
+  // Central steam-to-DHW HX (district or in-building steam → indirect tank)
+  /** Overall efficiency of the steam source upstream of the building. For
+   *  district steam this is plant efficiency × mains/distribution loss
+   *  (typical 0.65). For in-building generated steam this is boiler
+   *  efficiency × in-building distribution (typical 0.85). Range 0.60–0.90. */
+  steamSourceEfficiency: number;
+  /** Heat-exchanger transfer effectiveness from steam side to potable side
+   *  on a `central_steam_hx` system. Plate or shell-and-tube HX with clean
+   *  surfaces — typical 0.88–0.95. Range 0.80–0.98. */
+  steamHXEffectiveness: number;
+  /** Steam supply pressure (PSIG) at the building HX. Sets the steam
+   *  saturation temperature (~227°F at 5 PSIG); the storage setpoint must
+   *  stay below saturation − ~20°F approach for the HX to deliver design
+   *  capacity. Informational only — used to flag infeasible setpoints. */
+  steamSupplyPressurePSIG: number;
+
   // Fixture flow rates (GPM), used by tankless peak-demand calc
   fixtureGPM: FixtureGPM;
 }
@@ -175,5 +204,10 @@ export const DEFAULT_INPUTS: DhwInputs = {
   gasTanklessSetpointF: 120,
   centralGasTanklessInput: 1000,
   indirectHXEffectiveness: 0.92,
+  hybridSplitRatio: 0.65,
+  hybridGasBackupType: "tank",
+  steamSourceEfficiency: 0.75,
+  steamHXEffectiveness: 0.90,
+  steamSupplyPressurePSIG: 5,
   fixtureGPM: { ...DEFAULT_FIXTURE_GPM },
 };

@@ -401,6 +401,18 @@ export function MethodologyTab() {
             resistance-backup share (ramps up as ambient drops below the HPWH op limit). The
             model produces kWh or therms + cost + carbon per month.
           </p>
+          <H4>Steam-to-DHW HX caveat</H4>
+          <p>
+            For <Code>central_steam_hx</Code> systems, annual energy is reported as steam-therm
+            equivalents using <Code>gasRate</Code> ($/therm) and <Code>NG_LB_CO2_PER_THERM</Code>{" "}
+            as proxies for cost and carbon. <strong>This is an approximation.</strong> District
+            steam pricing is more commonly billed in $/MMBtu, not per-therm, and carbon depends on
+            the upstream plant fuel mix (natural gas, fuel oil, biomass, or co-gen) rather than a
+            fixed natural-gas factor. Use the surfaced therm and carbon figures as order-of-magnitude
+            estimates; for utility-bill validation override <Code>gasRate</Code> with the local
+            steam tariff converted to per-therm, and adjust <Code>customEF</Code> to reflect the
+            plant&rsquo;s carbon intensity if known.
+          </p>
         </Prose>
       </Card>
 

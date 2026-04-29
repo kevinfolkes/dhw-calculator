@@ -36,6 +36,7 @@ describe("runCalc (integration)", () => {
   it("auto-size returns a recommended size for every supported system type", () => {
     const systems = [
       "central_gas", "central_gas_tankless", "central_indirect",
+      "central_hybrid", "central_steam_hx",
       "central_resistance", "central_hpwh",
       "inunit_gas_tank", "inunit_gas_tankless", "inunit_hpwh",
       "inunit_combi", "inunit_combi_gas",
@@ -97,5 +98,24 @@ describe("central_indirect", () => {
     expect(result.autoSize?.recommended).toBeTruthy();
     expect(result.effectiveGasEfficiency).toBeLessThan(DEFAULT_INPUTS.gasEfficiency);
     expect(result.monthly.monthlyUnit).toBe("therms");
+  });
+});
+
+describe("central_hybrid", () => {
+  it("computes both HPWH and gas energy contributions", () => {
+    const result = runCalc({ ...DEFAULT_INPUTS, systemType: "central_hybrid" });
+    expect(result.totalBTUH).toBeGreaterThan(0);
+    expect(result.annualGasTherms).toBeGreaterThan(0);
+    expect(result.annualElectricKWh).toBeGreaterThan(0);
+    expect(result.autoSize?.recommended).toBeTruthy();
+  });
+});
+
+describe("central_steam_hx", () => {
+  it("derates required input by combined source × HX efficiency", () => {
+    const result = runCalc({ ...DEFAULT_INPUTS, systemType: "central_steam_hx" });
+    expect(result.storageVolGal).toBeGreaterThan(0);
+    expect(result.gasInputBTUH).toBeGreaterThan(result.totalBTUH); // higher than direct due to source+HX losses
+    expect(result.autoSize?.recommended).toBeTruthy();
   });
 });
