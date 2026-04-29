@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Book, Building2, Calculator, ClipboardList, Droplets, FileText, GitCompare, Gauge, Home, Sigma,
-  ThermometerSun, type LucideIcon,
+  Book, Building2, Calculator, ClipboardList, Droplets, FileText, GitCompare, Gauge, Home,
+  LayoutGrid, Sigma, ThermometerSun, type LucideIcon,
 } from "lucide-react";
 import { runCalc } from "@/lib/calc/pipeline";
 import type { DhwInputs } from "@/lib/calc/inputs";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import { useDhwInputs } from "@/hooks/useDhwInputs";
+import { OverviewTab } from "@/components/tabs/OverviewTab";
 import { BuildingTab } from "@/components/tabs/BuildingTab";
 import { DemandTab } from "@/components/tabs/DemandTab";
 import { CurrentDesignTab } from "@/components/tabs/CurrentDesignTab";
@@ -25,6 +26,7 @@ import { CompareTab } from "@/components/tabs/CompareTab";
 import { exportDOCX, exportPDF } from "@/lib/export/submittal";
 
 type TabId =
+  | "overview"
   | "building"
   | "demand"
   | "current"
@@ -47,7 +49,7 @@ interface TabDef {
 
 export default function DhwCalculator() {
   const { inputs, setInputs, update, shareURL } = useDhwInputs();
-  const [tab, setTab] = useState<TabId>("building");
+  const [tab, setTab] = useState<TabId>("overview");
   const [toast, setToast] = useState<string | null>(null);
 
   const result = useMemo(() => runCalc(inputs), [inputs]);
@@ -58,6 +60,7 @@ export default function DhwCalculator() {
     // chosen in earlier tabs. Equipment selections come before the evaluation
     // tabs (Current Design, Auto-Size, Energy) that reference them.
     const base: TabDef[] = [
+      { id: "overview", label: "Overview", icon: LayoutGrid },
       { id: "building", label: "Building & System", icon: Building2 },
       { id: "demand", label: "Demand", icon: Droplets },
     ];
@@ -94,7 +97,7 @@ export default function DhwCalculator() {
 
   // Keep active tab valid as system type changes
   useEffect(() => {
-    if (!tabs.find((t) => t.id === tab)) setTab("building");
+    if (!tabs.find((t) => t.id === tab)) setTab("overview");
   }, [tabs, tab]);
 
   // Auto-dismiss toast
@@ -370,6 +373,7 @@ export default function DhwCalculator() {
         className="animate-fade-in"
         key={tab}
       >
+        {tab === "overview" && <OverviewTab inputs={inputs} update={update} />}
         {tab === "building" && <BuildingTab inputs={inputs} update={update} />}
         {tab === "demand" && <DemandTab inputs={inputs} update={update} result={result} />}
         {tab === "current" && <CurrentDesignTab inputs={inputs} result={result} />}
