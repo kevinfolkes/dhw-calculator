@@ -9,6 +9,8 @@ export type SubTech = "tank" | "tankless";
 
 export type SystemTypeKey =
   | "central_gas"
+  | "central_gas_tankless"
+  | "central_indirect"
   | "central_resistance"
   | "central_hpwh"
   | "inunit_gas_tank"
@@ -43,6 +45,31 @@ export const SYSTEM_TYPES: Record<SystemTypeKey, SystemTypeDef> = {
       "Traditional central plant. Gas condensing water heaters with storage tanks and recirculation loop serving all units. Baseline comparison for electrification projects.",
     archetypes: "Lochinvar Armor/Shield, AO Smith Cyclone, AERCO Innovation, RBI Futera",
     color: "#f2a85b",
+  },
+  central_gas_tankless: {
+    label: "Central Gas Tankless (modulating condensing) + Recirc",
+    short: "Central Gas Tankless",
+    topology: "central",
+    tech: "gas",
+    subtech: "tankless",
+    hasRecirc: true,
+    hasSpaceHeating: false,
+    description:
+      "Central plant of modulating condensing tankless gas water heaters tied to a recirculation loop. No primary storage tank (or only a trivial buffer). Sized by peak instantaneous GPM × ΔT instead of FHR + storage.",
+    archetypes: "Lochinvar Knight Tankless, AERCO Innovation, Camus Dynaflame, Patterson Kelley Mach",
+    color: "#e8975c",
+  },
+  central_indirect: {
+    label: "Central Indirect (boiler + indirect tank) + Recirc",
+    short: "Central Indirect",
+    topology: "central",
+    tech: "gas",
+    hasRecirc: true,
+    hasSpaceHeating: false,
+    description:
+      "Central plant where one or more hydronic boilers heat a glycol/water loop that feeds an indirect-fired storage tank (or plate heat exchanger) on the potable side. Common in older urban high-rise where a single boiler serves both heating and DHW.",
+    archetypes: "Weil-McLain Ultra + indirect HX, Lochinvar FTXL + Aerco SmartPlate, Aerco Benchmark + plate HX, Riello + indirect tank",
+    color: "#d8924e",
   },
   central_resistance: {
     label: "Central Electric Resistance + Recirc",

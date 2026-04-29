@@ -22,6 +22,20 @@ export function installedCost(
   if (systemType === "central_gas") {
     return 15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12;
   }
+  if (systemType === "central_gas_tankless") {
+    // Modulating condensing tankless central plant: $4,000 base + $4/MBH
+    // covers the cascade of tankless modules + manifold + recirc tie-in.
+    // No primary storage, so no $/gal term — runs ~15% lower than the
+    // equivalent central gas + storage at the same input rating.
+    return 4000 + (params.inputMBH ?? 0) * 4;
+  }
+  if (systemType === "central_indirect") {
+    // Boiler-equivalent cost (same as central_gas) + 25% markup for the
+    // indirect storage tank / plate HX, controls, and the secondary loop
+    // pumping that distinguishes an indirect plant from a direct-fired
+    // central gas water heater.
+    return 1.25 * (15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12);
+  }
   if (systemType === "central_resistance") {
     return 10000 + (params.storageGal ?? 0) * 6 + (params.kW ?? 0) * 150;
   }

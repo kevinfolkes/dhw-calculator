@@ -211,6 +211,8 @@ function CompareRow({
 export function CurrentDesignTab({ inputs, result }: Props) {
   const sys = SYSTEM_TYPES[inputs.systemType];
   const isCentral = sys.topology === "central";
+  const isCentralTankless = inputs.systemType === "central_gas_tankless";
+  const isCentralIndirect = inputs.systemType === "central_indirect";
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
@@ -279,7 +281,7 @@ export function CurrentDesignTab({ inputs, result }: Props) {
       </Card>
 
       {/* 2. Sizing requirement (central only — for in-unit sizing is per-unit in section 3) */}
-      {isCentral && (
+      {isCentral && !isCentralTankless && (
         <Card>
           <SectionHeader n={2} title="Sizing requirement (ASHRAE)" sub="Storage + recovery to meet peak hour" />
           <Grid cols={3}>
@@ -301,6 +303,42 @@ export function CurrentDesignTab({ inputs, result }: Props) {
               unit="kW"
               sub={`${fmt(result.totalBTUH)} BTU/hr · includes ${fmt(result.recircLossBTUH)} BTU/hr recirc`}
               accent="var(--accent-violet)"
+            />
+          </Grid>
+        </Card>
+      )}
+
+      {/* 2-alt. Sizing requirement for central tankless — instantaneous GPM */}
+      {isCentralTankless && (
+        <Card>
+          <SectionHeader
+            n={2}
+            title="Sizing requirement (instantaneous)"
+            sub="Peak GPM × ΔT — no primary storage"
+          />
+          <Grid cols={3}>
+            <MetricCard
+              label="Required peak GPM"
+              value={fmt(result.centralTanklessPeakGPMRequired, 1)}
+              unit="GPM"
+              sub="peak hour ÷ 60 × 1.5 (ASHRAE Ch. 51)"
+            />
+            <MetricCard
+              label="Recovery target (recirc + draw)"
+              value={fmt(result.recoveryGPH)}
+              unit="GPH"
+              sub={`${fmt(result.totalBTUH)} BTU/hr · ${fmt(result.totalKW, 1)} kW`}
+            />
+            <MetricCard
+              label="Recirc standby"
+              value={fmt(result.recircLossBTUH)}
+              unit="BTU/hr"
+              sub={`${fmt(result.recircLossKW, 2)} kW · ${
+                result.totalBTUH > 0
+                  ? ((result.recircLossBTUH / result.totalBTUH) * 100).toFixed(0)
+                  : "0"
+              }% of total`}
+              accent="var(--accent-amber)"
             />
           </Grid>
         </Card>
@@ -334,6 +372,78 @@ export function CurrentDesignTab({ inputs, result }: Props) {
                 value={fmt(outputBTUH / 1000)}
                 unit="MBH"
                 sub={`required ${fmt(result.totalBTUH / 1000)} MBH`}
+                accent={A_GAS}
+              />
+              <MetricCard
+                label="Spec reality check"
+                value=""
+                sub={
+                  <StatusBadge
+                    ok={meets}
+                    text={meets ? "≥ design load" : "below design load"}
+                  />
+                }
+                accent={meets ? A_OK : A_BAD}
+              />
+            </Grid>
+          );
+        })()}
+
+        {isCentral && isCentralTankless && (
+          <Grid cols={3}>
+            <MetricCard
+              label={`${inputs.centralGasTanklessInput} MBH module`}
+              value={fmt(result.centralTanklessCapacityGPM, 1)}
+              unit="GPM @ rise"
+              sub={
+                <StatusBadge
+                  ok={result.centralTanklessMetsDemand}
+                  text={
+                    result.centralTanklessMetsDemand
+                      ? "meets peak"
+                      : `below ${fmt(result.centralTanklessPeakGPMRequired, 1)} GPM peak`
+                  }
+                />
+              }
+              accent={A_GAS}
+            />
+            <MetricCard
+              label="Required peak GPM"
+              value={fmt(result.centralTanklessPeakGPMRequired, 1)}
+              unit="GPM"
+              sub={`@ ${fmt(result.temperatureRise)}°F design rise`}
+              accent={A_GAS}
+            />
+            <MetricCard
+              label="Spec reality check"
+              value=""
+              sub={
+                <StatusBadge
+                  ok={result.centralTanklessMetsDemand}
+                  text={result.centralTanklessMetsDemand ? "≥ peak" : "below peak"}
+                />
+              }
+              accent={result.centralTanklessMetsDemand ? A_OK : A_BAD}
+            />
+          </Grid>
+        )}
+
+        {isCentral && isCentralIndirect && (() => {
+          const outputBTUH = result.gasInputBTUH * result.effectiveGasEfficiency;
+          const meets = outputBTUH >= result.totalBTUH;
+          return (
+            <Grid cols={3}>
+              <MetricCard
+                label="Boiler input"
+                value={fmt(result.gasInputBTUH / 1000)}
+                unit="MBH"
+                sub={`combined η ${(result.effectiveGasEfficiency * 100).toFixed(1)}%`}
+                accent={A_GAS}
+              />
+              <MetricCard
+                label="HX effectiveness"
+                value={`${(inputs.indirectHXEffectiveness * 100).toFixed(0)}%`}
+                sub={`gas η ${(inputs.gasEfficiency * 100).toFixed(0)}% × HX`}
                 accent={A_GAS}
               />
               <MetricCard
@@ -724,30 +834,41 @@ export function CurrentDesignTab({ inputs, result }: Props) {
           sub="Monthly model · climate-weighted"
         />
         <Grid cols={3}>
-          {isCentral && inputs.systemType === "central_gas" && (
-            <>
-              <MetricCard
-                label="Annual gas"
-                value={fmtUSD(result.annualGasCost)}
-                unit="/yr"
-                sub={`${fmt(result.annualGasTherms)} therms`}
-                accent={A_GAS}
-              />
-              <MetricCard
-                label="Annual carbon"
-                value={fmt(result.annualGasCarbon)}
-                unit="lb CO₂"
-                accent={A_GAS}
-              />
-              <MetricCard
-                label="Annual kWh-equiv."
-                value={fmt(result.annualGasTherms * 29.3)}
-                unit="kWh"
-                sub="1 therm ≈ 29.3 kWh"
-                accent={A_GAS}
-              />
-            </>
-          )}
+          {isCentral &&
+            (inputs.systemType === "central_gas" ||
+              isCentralTankless ||
+              isCentralIndirect) && (
+              <>
+                <MetricCard
+                  label="Annual gas"
+                  value={fmtUSD(result.annualGasCost)}
+                  unit="/yr"
+                  sub={`${fmt(result.annualGasTherms)} therms`}
+                  accent={A_GAS}
+                />
+                <MetricCard
+                  label="Annual carbon"
+                  value={fmt(result.annualGasCarbon)}
+                  unit="lb CO₂"
+                  accent={A_GAS}
+                />
+                <MetricCard
+                  label={isCentralIndirect ? "Combined system η" : "Annual kWh-equiv."}
+                  value={
+                    isCentralIndirect
+                      ? `${(result.effectiveGasEfficiency * 100).toFixed(1)}%`
+                      : fmt(result.annualGasTherms * 29.3)
+                  }
+                  unit={isCentralIndirect ? undefined : "kWh"}
+                  sub={
+                    isCentralIndirect
+                      ? `gas η × HX ${(inputs.indirectHXEffectiveness * 100).toFixed(0)}%`
+                      : "1 therm ≈ 29.3 kWh"
+                  }
+                  accent={A_GAS}
+                />
+              </>
+            )}
           {isCentral && inputs.systemType === "central_resistance" && (
             <>
               <MetricCard

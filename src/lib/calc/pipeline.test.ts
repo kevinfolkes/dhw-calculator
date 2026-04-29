@@ -35,7 +35,8 @@ describe("runCalc (integration)", () => {
 
   it("auto-size returns a recommended size for every supported system type", () => {
     const systems = [
-      "central_gas", "central_resistance", "central_hpwh",
+      "central_gas", "central_gas_tankless", "central_indirect",
+      "central_resistance", "central_hpwh",
       "inunit_gas_tank", "inunit_gas_tankless", "inunit_hpwh",
       "inunit_combi", "inunit_combi_gas",
     ] as const;
@@ -69,5 +70,32 @@ describe("runCalc (integration)", () => {
   it("peak-hour demand is never negative", () => {
     const r = runCalc({ ...DEFAULT_INPUTS, units1BR: 0, units2BR: 0, units3BR: 0 });
     expect(r.peakHourDemand).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("central_gas_tankless", () => {
+  it("computes non-NaN, sane peak instantaneous capacity and annual energy", () => {
+    const result = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas_tankless" });
+    expect(result.totalBTUH).toBeGreaterThan(0);
+    expect(result.annualGasTherms).toBeGreaterThan(0);
+    expect(result.autoSize?.recommended).toBeTruthy();
+    // Tankless has no primary storage
+    expect(result.storageVolGal).toBe(0);
+    expect(result.centralTanklessPeakGPMRequired).toBeGreaterThan(0);
+    expect(result.centralTanklessCapacityGPM).toBeGreaterThan(0);
+    // Therms output expected for a gas system
+    expect(result.monthly.monthlyUnit).toBe("therms");
+  });
+});
+
+describe("central_indirect", () => {
+  it("computes non-NaN, sane storage + boiler sizing with HX effectiveness", () => {
+    const result = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect" });
+    expect(result.storageVolGal).toBeGreaterThan(0);
+    // Higher boiler input than direct due to HX loss
+    expect(result.gasInputBTUH).toBeGreaterThan(result.totalBTUH);
+    expect(result.autoSize?.recommended).toBeTruthy();
+    expect(result.effectiveGasEfficiency).toBeLessThan(DEFAULT_INPUTS.gasEfficiency);
+    expect(result.monthly.monthlyUnit).toBe("therms");
   });
 });

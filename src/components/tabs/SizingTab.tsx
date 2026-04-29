@@ -7,18 +7,55 @@ import { fmt } from "@/lib/utils";
 import type { CalcResult } from "@/lib/calc/types";
 
 export function SizingTab({ result }: { result: CalcResult }) {
+  // Tankless central plants size by peak instantaneous GPM × ΔT, not storage
+  // + recovery, so the storage card is suppressed and a capacity-check card
+  // takes its place. We detect that case by inspecting the tankless-only
+  // outputs (zero for every other system type).
+  const isCentralTankless = result.centralTanklessCapacityGPM > 0;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <Card>
-        <CardHeader>
-          <CardTitle>Storage Sizing (ASHRAE method)</CardTitle>
-        </CardHeader>
-        <Grid cols={3}>
-          <MetricCard label="Nominal storage" value={fmt(result.storageVolGal_nominal)} unit="gal" sub="Peak hour × storage coef (1.25)" />
-          <MetricCard label="Usable storage" value={fmt(result.storageVolGal)} unit="gal" sub="Nominal ÷ 0.75 stratification fraction" />
-          <MetricCard label="Tempered capacity" value={fmt(result.temperedCapacityGal)} unit="gal" sub="Stored 140°F → delivered" accent="var(--accent-violet)" />
-        </Grid>
-      </Card>
+      {isCentralTankless ? (
+        <Card accent="#e8975c">
+          <CardHeader>
+            <CardTitle>Central Tankless Capacity (peak instantaneous)</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard
+              label="Required peak GPM"
+              value={fmt(result.centralTanklessPeakGPMRequired, 1)}
+              unit="GPM"
+              sub="peak hour ÷ 60 × 1.5 (ASHRAE Ch. 51 instantaneous)"
+            />
+            <MetricCard
+              label="Module capacity at rise"
+              value={fmt(result.centralTanklessCapacityGPM, 1)}
+              unit="GPM"
+              sub={`@ ${fmt(result.temperatureRise)}°F design rise`}
+            />
+            <MetricCard
+              label="Coverage"
+              value={result.centralTanklessMetsDemand ? "✓ meets" : "✗ short"}
+              sub="capacity ≥ required"
+              accent={
+                result.centralTanklessMetsDemand
+                  ? "var(--accent-emerald)"
+                  : "var(--accent-red)"
+              }
+            />
+          </Grid>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Storage Sizing (ASHRAE method)</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard label="Nominal storage" value={fmt(result.storageVolGal_nominal)} unit="gal" sub="Peak hour × storage coef (1.25)" />
+            <MetricCard label="Usable storage" value={fmt(result.storageVolGal)} unit="gal" sub="Nominal ÷ 0.75 stratification fraction" />
+            <MetricCard label="Tempered capacity" value={fmt(result.temperedCapacityGal)} unit="gal" sub="Stored 140°F → delivered" accent="var(--accent-violet)" />
+          </Grid>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

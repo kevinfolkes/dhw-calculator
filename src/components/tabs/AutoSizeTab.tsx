@@ -581,6 +581,13 @@ const SIZED_VARIABLES: Record<SystemTypeKey, SizedVariable[]> = {
     { label: "Storage tank (gal)", detail: "From standard sizes 80 / 100 / 119 / 175 / 250 / 400 / 600 / 800 / 1000 / 1500 / 2000 gal.", constraint: "peak_hour × 1.25 ÷ 0.75" },
     { label: "Burner input (MBH)", detail: "From standard sizes 100 / 150 / 200 / 300 / 400 / 500 / 750 / 1000 / 1500 / 2000 MBH.", constraint: "recovery_BTUH ÷ gas_efficiency" },
   ],
+  central_gas_tankless: [
+    { label: "Module input (MBH)", detail: "From 200 / 400 / 600 / 1000 / 1500 / 2000 / 3000 / 4000 MBH. Modulating condensing tankless cascades.", constraint: "capacity_at_rise ≥ 1.5 × peak_GPM (ASHRAE Ch. 51 instantaneous)" },
+  ],
+  central_indirect: [
+    { label: "Storage tank (gal)", detail: "Same standard sizes as central gas — indirect-fired or paired with plate HX.", constraint: "peak_hour × 1.25 ÷ 0.75" },
+    { label: "Boiler input (MBH)", detail: "Same standard sizes as central gas. Sized for the combined gas η × HX effectiveness so the potable side meets recovery.", constraint: "recovery_BTUH ÷ (gas_efficiency × HX_effectiveness)" },
+  ],
   central_resistance: [
     { label: "Storage tank (gal)", detail: "Same standard sizes as central gas.", constraint: "peak_hour × 1.25 ÷ 0.75" },
     { label: "Electric element (kW)", detail: "From 12 / 18 / 27 / 36 / 54 / 72 / 108 / 144 / 180 / 216 / 288 kW.", constraint: "total_BTUH ÷ 3412" },
@@ -631,6 +638,8 @@ function formatRecVal(v: unknown): string {
 function recommendedMarginLabel(st: SystemTypeKey): string {
   switch (st) {
     case "central_gas": return "+25% MBH";
+    case "central_gas_tankless": return "+25% peak GPM";
+    case "central_indirect": return "+25% MBH (HX-derated)";
     case "central_resistance": return "+20% kW";
     case "central_hpwh": return "+25% nameplate";
     case "inunit_gas_tank": return "+15% FHR";
@@ -644,6 +653,8 @@ function recommendedMarginLabel(st: SystemTypeKey): string {
 function recommendedRuleLabel(st: SystemTypeKey): string {
   switch (st) {
     case "central_gas": return "Smallest input MBH ≥ 1.25 × minimum (absorbs off-design + diversity error)";
+    case "central_gas_tankless": return "Smallest module MBH whose capacity at design rise ≥ 1.25 × required peak GPM";
+    case "central_indirect": return "Smallest boiler MBH ≥ 1.25 × minimum, where minimum derates by gas η × HX effectiveness";
     case "central_resistance": return "Smallest kW ≥ 1.20 × minimum";
     case "central_hpwh": return "Smallest nameplate ≥ 1.25 × minimum (absorbs cold-ambient derate)";
     case "inunit_gas_tank": return "Smallest tank whose condensing FHR ≥ 1.15 × peak-hour per unit";

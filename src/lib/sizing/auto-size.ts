@@ -8,9 +8,10 @@
  * Ported from the original artifact's `autoSize()` closure.
  */
 import {
-  CENTRAL_ELEC_KW, CENTRAL_GAS_INPUT_MBH, CENTRAL_HPWH_KW, CENTRAL_TANK_SIZES,
+  CENTRAL_ELEC_KW, CENTRAL_GAS_INPUT_MBH, CENTRAL_GAS_TANKLESS_INPUT_MBH, CENTRAL_HPWH_KW, CENTRAL_TANK_SIZES,
   GAS_TANKLESS_WH, GAS_TANK_WH, HPWH_TANK_FHR,
   type ApartmentDemand,
+  type CentralGasTanklessInput,
   type GasTankSize, type GasTanklessInput, type HPWHTankSize,
 } from "@/lib/engineering/constants";
 import type { SystemTypeKey } from "@/lib/engineering/system-types";
@@ -41,6 +42,12 @@ export interface AutoSizeContext {
   combiCOP_heating: number;
   tanklessPeakGPM: number;
   totalUnits: number;
+  /** Required peak instantaneous GPM for a central tankless plant, including
+   *  the 1.5× ASHRAE Ch. 51 sizing margin. Only meaningful when
+   *  `systemType === "central_gas_tankless"`. */
+  centralTanklessPeakGPMRequired: number;
+  /** Design ΔT used when computing tankless capacity-at-rise. */
+  centralTanklessDesignRiseF: number;
 }
 
 export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
@@ -105,6 +112,100 @@ export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
       reqPeakHourGPH: ctx.peakHourDemand,
       reqOutputMBH,
       reqOutputKW,
+    };
+  }
+
+  // ---------- CENTRAL INDIRECT (boiler + indirect tank / plate HX) --------
+  // Same storage/recovery topology as central_gas, but the boiler must
+  // overcome both burner inefficiency and the heat-exchanger transfer loss
+  // from boiler loop to potable. Reuses CENTRAL_GAS_INPUT_MBH and
+  // CENTRAL_TANK_SIZES ladders.
+  if (st === "central_indirect") {
+    const minStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction / 50) * 50;
+    const recStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction * 1.25 / 50) * 50;
+
+    const minTank = CENTRAL_TANK_SIZES.find(s => s >= minStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const recTank = CENTRAL_TANK_SIZES.find(s => s >= recStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+
+    const reqOutputMBH = ctx.totalBTUH / 1000;
+    const reqOutputKW = ctx.totalKW;
+
+    const combinedEff = input.gasEfficiency * input.indirectHXEffectiveness;
+    const minInputMBH = reqOutputMBH / combinedEff;
+    const recInputMBH = minInputMBH * 1.25;
+    const minCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= minInputMBH) ?? CENTRAL_GAS_INPUT_MBH[CENTRAL_GAS_INPUT_MBH.length - 1];
+    const recCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= recInputMBH) ?? CENTRAL_GAS_INPUT_MBH[CENTRAL_GAS_INPUT_MBH.length - 1];
+
+    let best: (SizingRec & { tank: number; cap: number; capUnit: string }) | null = null;
+    for (const tank of CENTRAL_TANK_SIZES) {
+      if (tank < minTank) continue;
+      if (tank > recTank * 2) continue;
+      const size: InstalledCostParams = { storageGal: tank, inputMBH: recCap };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) {
+        best = { tank, cap: recCap, capUnit: "MBH input", capCost, annCost, total15 };
+      }
+    }
+
+    const minSize: InstalledCostParams = { storageGal: minTank, inputMBH: minCap };
+    const recSize: InstalledCostParams = { storageGal: recTank, inputMBH: recCap };
+
+    return {
+      system: st,
+      minimum: { tank: minTank, cap: minCap, capUnit: "MBH input", capCost: ic(minSize), annCost: annualCostForSize(minSize) },
+      recommended: { tank: recTank, cap: recCap, capUnit: "MBH input", capCost: ic(recSize), annCost: annualCostForSize(recSize) },
+      lifecycle: best,
+      reqPeakHourGPH: ctx.peakHourDemand,
+      reqOutputMBH,
+      reqOutputKW,
+      reqInputMBH_derated: minInputMBH,
+    };
+  }
+
+  // ---------- CENTRAL GAS TANKLESS (modulating condensing) ---------------
+  // No storage. Sizing is driven by the peak instantaneous GPM × ΔT design
+  // criterion (ASHRAE Ch. 51 §"Instantaneous water heaters" — 1.5× peak
+  // 15-min demand). Capacity at the design rise scales with input MBH × UEF.
+  if (st === "central_gas_tankless") {
+    const sizes = CENTRAL_GAS_TANKLESS_INPUT_MBH.slice().sort((a, b) => a - b) as readonly CentralGasTanklessInput[];
+    const reqGPM = ctx.centralTanklessPeakGPMRequired;
+    const rise = Math.max(1, ctx.centralTanklessDesignRiseF);
+
+    const capacityGPM = (mbh: number) =>
+      (mbh * input.gasEfficiency * 1000) / (500 * rise);
+
+    const findInput = (margin: number): CentralGasTanklessInput =>
+      sizes.find(s => capacityGPM(s) >= reqGPM * margin) ?? sizes[sizes.length - 1];
+
+    const minInput = findInput(1.0);
+    const recInput = findInput(1.25);
+
+    let best: (SizingRec & { inputMBH: number }) | null = null;
+    for (const s of sizes) {
+      if (capacityGPM(s) < reqGPM) continue;
+      const size: InstalledCostParams = { inputMBH: s };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) best = { inputMBH: s, capCost, annCost, total15 };
+    }
+
+    return {
+      system: st,
+      reqPeakGPM: reqGPM,
+      reqOutputMBH: ctx.totalBTUH / 1000,
+      reqOutputKW: ctx.totalKW,
+      minimum: {
+        inputMBH: minInput, cap: minInput, capUnit: "MBH input",
+        capCost: ic({ inputMBH: minInput }), annCost: annualCostForSize({ inputMBH: minInput }),
+      },
+      recommended: {
+        inputMBH: recInput, cap: recInput, capUnit: "MBH input",
+        capCost: ic({ inputMBH: recInput }), annCost: annualCostForSize({ inputMBH: recInput }),
+      },
+      lifecycle: best,
     };
   }
 
@@ -264,6 +365,13 @@ function annualCostForSizeImpl(ctx: AutoSizeContext, size: InstalledCostParams):
 
   if (st === "central_gas") {
     return (ctx.annualTotalBTU / (input.gasEfficiency * 100000)) * input.gasRate;
+  }
+  if (st === "central_gas_tankless") {
+    return (ctx.annualTotalBTU / (input.gasEfficiency * 100000)) * input.gasRate;
+  }
+  if (st === "central_indirect") {
+    const eff = input.gasEfficiency * input.indirectHXEffectiveness;
+    return (ctx.annualTotalBTU / (eff * 100000)) * input.gasRate;
   }
   if (st === "central_resistance") {
     return (ctx.annualTotalBTU / 3412) * input.elecRate;

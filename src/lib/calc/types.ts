@@ -221,4 +221,20 @@ export interface CalcResult {
   /** Recommended buffer tank volume (gal) for combi HPWH systems with
    *  bufferTankEnabled. null when not applicable. */
   bufferTankVolumeGal: number | null;
+  /** Peak instantaneous GPM the central tankless plant must deliver to meet
+   *  peak hour demand (with ASHRAE Ch. 51 §"Instantaneous water heaters"
+   *  1.5× margin on the average peak-hour rate). Only meaningful for
+   *  `central_gas_tankless`; 0 for other system types. */
+  centralTanklessPeakGPMRequired: number;
+  /** Peak instantaneous GPM capacity of the selected central tankless input
+   *  rating at the design ΔT. Only meaningful for `central_gas_tankless`;
+   *  0 for other system types. */
+  centralTanklessCapacityGPM: number;
+  /** Whether the selected central tankless module covers the required peak
+   *  instantaneous flow. Only meaningful for `central_gas_tankless`. */
+  centralTanklessMetsDemand: boolean;
+  /** Combined system efficiency for `central_indirect` (gasEfficiency × HX
+   *  effectiveness). For other systems mirrors `gasEfficiency` so it can be
+   *  surfaced uniformly in the equipment / calculations tabs. */
+  effectiveGasEfficiency: number;
 }

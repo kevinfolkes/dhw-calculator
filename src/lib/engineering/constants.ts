@@ -275,5 +275,7 @@ export const GAS_TANKLESS_WH: Record<GasTanklessInput, GasTanklessSpec> = {
 // ---------------------------------------------------------------------------
 export const CENTRAL_TANK_SIZES = [80, 100, 119, 175, 250, 400, 600, 800, 1000, 1500, 2000] as const;
 export const CENTRAL_GAS_INPUT_MBH = [100, 150, 200, 300, 400, 500, 750, 1000, 1500, 2000] as const;
+export const CENTRAL_GAS_TANKLESS_INPUT_MBH = [200, 400, 600, 1000, 1500, 2000, 3000, 4000] as const;
+export type CentralGasTanklessInput = (typeof CENTRAL_GAS_TANKLESS_INPUT_MBH)[number];
 export const CENTRAL_ELEC_KW = [12, 18, 27, 36, 54, 72, 108, 144, 180, 216, 288] as const;
 export const CENTRAL_HPWH_KW = [15, 20, 30, 40, 60, 80, 120, 160, 200, 300] as const;

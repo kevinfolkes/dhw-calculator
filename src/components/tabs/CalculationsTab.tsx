@@ -38,6 +38,8 @@ interface FixtureMix {
 export function CalculationsTab({ inputs, result }: Props) {
   const sys = SYSTEM_TYPES[inputs.systemType];
   const isCentral = sys.topology === "central";
+  const isCentralTankless = inputs.systemType === "central_gas_tankless";
+  const isCentralIndirect = inputs.systemType === "central_indirect";
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
@@ -359,6 +361,61 @@ export function CalculationsTab({ inputs, result }: Props) {
               <Result>{fmt(result.gasInputBTUH)}</Result> BTU/hr ({fmt(result.gasInputBTUH / 1000)}{" "}
               MBH)
             </Formula>
+          </>
+        )}
+        {isCentralTankless && (
+          <>
+            <Prose>
+              Central tankless plants are sized by peak instantaneous GPM × ΔT, not by FHR +
+              storage. ASHRAE Ch. 51 §&ldquo;Instantaneous water heaters&rdquo; recommends 1.5×
+              peak 15-minute demand; we use 1.5× the average peak-hour rate as a conservative
+              proxy. Capacity-at-rise scales with the module&rsquo;s UEF (using the gas-efficiency
+              input as the surrogate, default 0.92).
+            </Prose>
+            <Formula>
+              required_GPM = peakHourDemand ÷ 60 × 1.5 = {fmt(result.peakHourDemand)} ÷ 60 × 1.5 ={" "}
+              <Result>{fmt(result.centralTanklessPeakGPMRequired, 2)}</Result> GPM
+            </Formula>
+            <Formula>
+              capacity_GPM = (input_MBH × UEF × 1000) ÷ (500 × ΔT)
+            </Formula>
+            <Sub>
+              ({inputs.centralGasTanklessInput} × {inputs.gasEfficiency.toFixed(2)} × 1000) ÷ (500 ×{" "}
+              {fmt(result.temperatureRise)}) ={" "}
+              <Result>{fmt(result.centralTanklessCapacityGPM, 2)}</Result> GPM →{" "}
+              {result.centralTanklessMetsDemand ? "✓ meets" : "✗ below"} required
+            </Sub>
+            <Formula>
+              gas_input_BTUH = total_BTUH ÷ η = {fmt(result.totalBTUH)} ÷{" "}
+              {inputs.gasEfficiency.toFixed(2)} ={" "}
+              <Result>{fmt(result.gasInputBTUH)}</Result> BTU/hr (annual energy uses the same η —
+              no separate storage standby loss).
+            </Formula>
+          </>
+        )}
+        {isCentralIndirect && (
+          <>
+            <Prose>
+              Central indirect systems use a hydronic boiler heating a glycol/water loop that
+              feeds an indirect-fired storage tank or plate HX on the potable side. The boiler
+              must overcome both burner inefficiency and the HX transfer derate.
+            </Prose>
+            <Formula>
+              effective_η = gas_η × HX_eff = {inputs.gasEfficiency.toFixed(2)} ×{" "}
+              {inputs.indirectHXEffectiveness.toFixed(2)} ={" "}
+              <Result>{result.effectiveGasEfficiency.toFixed(3)}</Result>
+            </Formula>
+            <Formula>
+              boiler_input_BTUH = total_BTUH ÷ effective_η = {fmt(result.totalBTUH)} ÷{" "}
+              {result.effectiveGasEfficiency.toFixed(3)} ={" "}
+              <Result>{fmt(result.gasInputBTUH)}</Result> BTU/hr ({fmt(result.gasInputBTUH / 1000)}{" "}
+              MBH)
+            </Formula>
+            <Prose>
+              Storage tank sizing reuses the central_gas formulas (peak hour × storage coef ÷
+              usable fraction). The HX derate flows through to annual energy too: therms ={" "}
+              annual_BTU ÷ (effective_η × 100,000).
+            </Prose>
           </>
         )}
         {inputs.systemType === "central_resistance" && (
@@ -699,6 +756,19 @@ export function CalculationsTab({ inputs, result }: Props) {
           <Formula>
             therms = total_BTU ÷ (η × 100,000) = <Result>{fmt(result.annualGasTherms)}</Result>{" "}
             therms · cost <Result>{fmtUSD(result.annualGasCost)}</Result>
+          </Formula>
+        )}
+        {isCentralTankless && (
+          <Formula>
+            therms = total_BTU ÷ (η × 100,000) = <Result>{fmt(result.annualGasTherms)}</Result>{" "}
+            therms · cost <Result>{fmtUSD(result.annualGasCost)}</Result>
+          </Formula>
+        )}
+        {isCentralIndirect && (
+          <Formula>
+            therms = total_BTU ÷ (gas_η × HX_eff × 100,000) ={" "}
+            <Result>{fmt(result.annualGasTherms)}</Result> therms · cost{" "}
+            <Result>{fmtUSD(result.annualGasCost)}</Result>
           </Formula>
         )}
         {inputs.systemType === "central_resistance" && (

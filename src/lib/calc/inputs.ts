@@ -5,6 +5,7 @@
  * single pure `runCalc()` function.
  */
 import type {
+  CentralGasTanklessInput,
   ClimateZoneKey,
   EnvelopeKey,
   GasTankSize,
@@ -114,6 +115,17 @@ export interface DhwInputs {
   tanklessSimultaneousFixtures: number;
   gasTanklessSetpointF: number;
 
+  // Central gas tankless (modulating condensing tankless central plant)
+  /** Selected per-unit input rating for a central tankless module (MBH) */
+  centralGasTanklessInput: CentralGasTanklessInput;
+
+  // Central indirect (boiler + indirect tank / plate HX)
+  /** Heat-exchanger transfer effectiveness from boiler loop to potable side
+   *  for a central indirect system. Multiplied with `gasEfficiency` to obtain
+   *  the overall system efficiency. Typical 0.88–0.95 for plate HX or modern
+   *  indirect-fired tanks. */
+  indirectHXEffectiveness: number;
+
   // Fixture flow rates (GPM), used by tankless peak-demand calc
   fixtureGPM: FixtureGPM;
 }
@@ -161,5 +173,7 @@ export const DEFAULT_INPUTS: DhwInputs = {
   tanklessDesignRiseF: 70,
   tanklessSimultaneousFixtures: 2,
   gasTanklessSetpointF: 120,
+  centralGasTanklessInput: 1000,
+  indirectHXEffectiveness: 0.92,
   fixtureGPM: { ...DEFAULT_FIXTURE_GPM },
 };

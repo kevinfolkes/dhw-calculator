@@ -47,6 +47,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     fanCoilSupplyF, combiDHWSetpointF, hpwhOpLimitF, ventilationLoadPerUnit,
     systemType, gasTankSize, gasTankType, gasTankSetpointF,
     gasTanklessInput, tanklessDesignRiseF, tanklessSimultaneousFixtures, gasTanklessSetpointF,
+    centralGasTanklessInput, indirectHXEffectiveness,
     bufferTankEnabled,
   } = input;
 
@@ -79,13 +80,18 @@ export function runCalc(input: DhwInputs): CalcResult {
   });
 
   // ---- STORAGE / RECOVERY (ASHRAE) --------------------------------------
+  // Tankless central plants size by peak instantaneous GPM × ΔT, not by FHR
+  // + storage. Zero out the storage variables for that topology so downstream
+  // tabs don't claim a phantom tank.
+  const isCentralTankless = systemType === "central_gas_tankless";
+  const isCentralIndirect = systemType === "central_indirect";
   const storageCoef = ashraeProfile.storageFrac;
   const recoveryCoef = ashraeProfile.recoveryFrac;
   const usableFraction = 0.75;
-  const storageVolGal_nominal = peakHourDemand * storageCoef;
-  const storageVolGal = storageVolGal_nominal / usableFraction;
+  const storageVolGal_nominal = isCentralTankless ? 0 : peakHourDemand * storageCoef;
+  const storageVolGal = isCentralTankless ? 0 : storageVolGal_nominal / usableFraction;
   const temperMultiplier = (storageSetpointF - effectiveInletF) / (deliveryF - effectiveInletF);
-  const temperedCapacityGal = storageVolGal * temperMultiplier;
+  const temperedCapacityGal = isCentralTankless ? 0 : storageVolGal * temperMultiplier;
 
   const recoveryGPH = peakHourDemand * recoveryCoef;
   const temperatureRise = storageSetpointF - effectiveInletF;
@@ -96,7 +102,13 @@ export function runCalc(input: DhwInputs): CalcResult {
   const totalKW = totalBTUH / 3412;
 
   // ---- TECH COMPARISON ---------------------------------------------------
-  const gasInputBTUH = totalBTUH / gasEfficiency;
+  // For `central_indirect`, the boiler-side input must overcome both the
+  // burner inefficiency and the heat-exchanger transfer derate from boiler
+  // loop to potable. For all other systems the HX effectiveness is 1.0.
+  const effectiveGasEfficiency = isCentralIndirect
+    ? gasEfficiency * indirectHXEffectiveness
+    : gasEfficiency;
+  const gasInputBTUH = totalBTUH / effectiveGasEfficiency;
   const resistanceInputKW = totalKW;
   const cop = hpwhCOP(effectiveHpwhAmbient, effectiveInletF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
   const capFactor = hpwhCapacityFactor(effectiveHpwhAmbient, hpwhRefrigerant);
@@ -110,7 +122,7 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualTotalBTU = annualDemandBTU + annualRecircBTU;
   const annualCOP = hpwhCOP(climate.mechRoomAnnual, effectiveInletF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
 
-  const annualGasTherms = annualTotalBTU / (gasEfficiency * 100000);
+  const annualGasTherms = annualTotalBTU / (effectiveGasEfficiency * 100000);
   const annualResistanceKWh = annualTotalBTU / 3412;
   const annualHPWHKWh_total =
     annualTotalBTU / 3412 / annualCOP + (swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0);
@@ -319,6 +331,23 @@ export function runCalc(input: DhwInputs): CalcResult {
     tanklessCFH_perUnit, tanklessBuildingDemandCFH,
   };
 
+  // ---- CENTRAL GAS TANKLESS (peak instantaneous capacity check) ----------
+  // ASHRAE Ch. 51 §"Instantaneous water heaters" recommends sizing tankless
+  // plants to ~1.5× the peak 15-minute demand. Here we use 1.5× the average
+  // peak-hour rate (peakHourDemand / 60) as a conservative proxy because
+  // peakHourDemand is the smallest-interval demand the pipeline computes
+  // upstream. Capacity at the design rise is set by the modulating
+  // condensing tankless module's UEF (using the standard `gasEfficiency`
+  // input as the UEF surrogate, default 0.92 for condensing central tankless).
+  const centralTanklessDesignRiseF = storageSetpointF - effectiveInletF;
+  const centralTanklessPeakGPMRequired = (peakHourDemand / 60) * 1.5;
+  const centralTanklessCapacityGPM =
+    centralTanklessDesignRiseF > 0
+      ? (centralGasTanklessInput * gasEfficiency * 1000) / (500 * centralTanklessDesignRiseF)
+      : 0;
+  const centralTanklessMetsDemand =
+    centralTanklessCapacityGPM >= centralTanklessPeakGPMRequired;
+
   // ---- MONTHLY MODEL -----------------------------------------------------
   const currentSysDef = SYSTEM_TYPES[systemType];
   const isInUnitGas_m = currentSysDef.topology === "inunit" && currentSysDef.tech === "gas";
@@ -382,6 +411,20 @@ export function runCalc(input: DhwInputs): CalcResult {
       dhwEnergy = monthTotalBTU / (gasEfficiency * 100000);
       unit = "therms";
       dhwCost = dhwEnergy * gasRate;
+    } else if (systemType === "central_gas_tankless") {
+      // Modulating condensing tankless: same monthly demand and recirc loss
+      // as a central gas plant, just no separate storage standby loss to
+      // account for (the recirc-loop loss is already captured below).
+      const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
+      dhwEnergy = monthTotalBTU / (gasEfficiency * 100000);
+      unit = "therms";
+      dhwCost = dhwEnergy * gasRate;
+    } else if (systemType === "central_indirect") {
+      // Boiler + indirect HX: combined efficiency = gasEfficiency × HX_eff.
+      const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
+      dhwEnergy = monthTotalBTU / (gasEfficiency * indirectHXEffectiveness * 100000);
+      unit = "therms";
+      dhwCost = dhwEnergy * gasRate;
     } else if (systemType === "central_resistance") {
       const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
       dhwEnergy = monthTotalBTU / 3412;
@@ -442,6 +485,10 @@ export function runCalc(input: DhwInputs): CalcResult {
     let effectiveMonthCOP_heating = 0;
     if (systemType === "central_gas") {
       effectiveMonthCOP_dhw = gasEfficiency;
+    } else if (systemType === "central_gas_tankless") {
+      effectiveMonthCOP_dhw = gasEfficiency;
+    } else if (systemType === "central_indirect") {
+      effectiveMonthCOP_dhw = gasEfficiency * indirectHXEffectiveness;
     } else if (systemType === "central_resistance") {
       effectiveMonthCOP_dhw = 1.0;
     } else if (systemType === "central_hpwh") {
@@ -528,6 +575,8 @@ export function runCalc(input: DhwInputs): CalcResult {
     combiCOP_heating,
     tanklessPeakGPM,
     totalUnits,
+    centralTanklessPeakGPMRequired,
+    centralTanklessDesignRiseF,
   });
 
   // ---- COMPLIANCE FLAGS --------------------------------------------------
@@ -576,6 +625,10 @@ export function runCalc(input: DhwInputs): CalcResult {
     autoSize: autoSizeResults,
     effectiveInletF,
     bufferTankVolumeGal,
+    centralTanklessPeakGPMRequired,
+    centralTanklessCapacityGPM,
+    centralTanklessMetsDemand,
+    effectiveGasEfficiency,
   };
 }
 
