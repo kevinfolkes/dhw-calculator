@@ -384,14 +384,19 @@ export function runCalc(input: DhwInputs): CalcResult {
   // upstream. Capacity at the design rise is set by the modulating
   // condensing tankless module's UEF (using the standard `gasEfficiency`
   // input as the UEF surrogate, default 0.92 for condensing central tankless).
-  const centralTanklessDesignRiseF = storageSetpointF - effectiveInletF;
-  const centralTanklessPeakGPMRequired = (peakHourDemand / 60) * 1.5;
+  // Only compute tankless GPM fields when the active system actually is a
+  // central tankless plant — otherwise the SizingTab's `> 0` gate would
+  // mistake every other central system for tankless. (`isCentralTankless`
+  // is already declared upstream where storage volume is zeroed; reuse it.)
+  const centralTanklessDesignRiseF = isCentralTankless ? storageSetpointF - effectiveInletF : 0;
+  const centralTanklessPeakGPMRequired = isCentralTankless ? (peakHourDemand / 60) * 1.5 : 0;
   const centralTanklessCapacityGPM =
-    centralTanklessDesignRiseF > 0
+    isCentralTankless && centralTanklessDesignRiseF > 0
       ? (centralGasTanklessInput * gasEfficiency * 1000) / (500 * centralTanklessDesignRiseF)
       : 0;
-  const centralTanklessMetsDemand =
-    centralTanklessCapacityGPM >= centralTanklessPeakGPMRequired;
+  const centralTanklessMetsDemand = isCentralTankless
+    ? centralTanklessCapacityGPM >= centralTanklessPeakGPMRequired
+    : true;
 
   // ---- CENTRAL HYBRID (HPWH baseload + gas peak/backup) ------------------
   // Split the design BTU/hr between an HPWH "primary" sized to the chosen

@@ -539,14 +539,14 @@ function buildSections(columns: ColumnData[]): SectionDef[] {
           values: get((c) => c.results.combi?.fhr ?? null),
         },
         {
-          label: "Recovery",
+          label: "Recovery rate",
           unit: "GPH",
           digits: 0,
           direction: "neutral",
           values: get((c) => c.results.recoveryGPH),
         },
         {
-          label: "Recovery",
+          label: "Recovery power",
           unit: "kW",
           digits: 1,
           direction: "neutral",
