@@ -5,6 +5,7 @@
  * single pure `runCalc()` function.
  */
 import type {
+  CascadeRedundancy,
   CentralBoilerType,
   CentralGasTanklessInput,
   ClimateZoneKey,
@@ -105,6 +106,22 @@ export interface DhwInputs {
    * where the distinction does not apply (no observable effect).
    */
   centralBoilerType: CentralBoilerType;
+  /**
+   * Number of boilers in a cascade for `central_gas`, `central_indirect`,
+   * and the gas backup leg of `central_hybrid`. 1 = single-boiler plant
+   * (default, preserves existing behavior); 2–8 = cascade modulating plant.
+   * Cascade plants get a part-load efficiency bonus (+1% per boiler, capped
+   * at +3%) and a manifold/control cost premium (+5% per boiler).
+   */
+  boilerCount: number;
+  /**
+   * Cascade redundancy mode. "N" = total installed capacity equals the
+   * design duty (no redundancy). "N+1" = total installed capacity is
+   * grossed up so any (N-1) boilers cover the design load — costs scale
+   * with installed capacity, not active duty. Standard practice for
+   * critical multifamily DHW plants serving 50+ units.
+   */
+  cascadeRedundancy: CascadeRedundancy;
   gasEfficiency: number;
   hpwhRefrigerant: Refrigerant;
   /** null → derive from mech room annual */
@@ -265,6 +282,8 @@ export const DEFAULT_INPUTS: DhwInputs = {
   recircReturnTempF: 125,
   ambientPipeF: 70,
   centralBoilerType: "condensing",
+  boilerCount: 1,
+  cascadeRedundancy: "N",
   gasEfficiency: 0.95,
   hpwhRefrigerant: "CO2",
   hpwhAmbientF: null,

@@ -23,6 +23,7 @@ import {
   MONTHS,
   NG_LB_CO2_PER_THERM,
   STEAM_SATURATION_TEMP_F_AT_5PSIG,
+  cascadeEfficiencyBonus,
 } from "@/lib/engineering/constants";
 import {
   deriveInletWaterF,
@@ -51,7 +52,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     storageSetpointF, deliveryF,
     demandMethod, occupantsPerUnit, gpcd,
     recircLoopLengthFt, pipeInsulationR, recircReturnTempF, ambientPipeF,
-    gasEfficiency, hpwhRefrigerant, hpwhAmbientF, swingTankEnabled, hpwhTier,
+    gasEfficiency, boilerCount, hpwhRefrigerant, hpwhAmbientF, swingTankEnabled, hpwhTier,
     elecRate, gasRate, gridSubregion, customEF,
     avgUnitSqft, envelopePreset, indoorDesignF, combiTankSize,
     fanCoilSupplyF, combiDHWSetpointF, hpwhOpLimitF, ventilationLoadPerUnit,
@@ -237,11 +238,22 @@ export function runCalc(input: DhwInputs): CalcResult {
   // string-matching on `systemType` (avoids needing `inputs` plumbed into
   // tabs that only receive `result`).
   const steamCombinedEfficiency = isCentralSteamHX ? steamCombinedEfficiencyRaw : 0;
+  // Cascade modulation gives a small seasonal-efficiency uplift for
+  // multi-boiler central plants (central_gas, central_indirect, central_
+  // hybrid gas leg). Other central systems (tankless modules, steam HX) and
+  // all in-unit systems get no bonus. Bonus is +1% per added boiler, capped
+  // at +3% — see CASCADE_EFFICIENCY_BONUS_* constants for sources.
+  const cascadeBonusEligible =
+    systemType === "central_gas" ||
+    systemType === "central_indirect" ||
+    systemType === "central_hybrid";
+  const cascadeBonus = cascadeBonusEligible ? cascadeEfficiencyBonus(boilerCount) : 0;
+  const cascadeAdjustedGasEfficiency = Math.min(0.99, gasEfficiency + cascadeBonus);
   const effectiveGasEfficiency = isCentralIndirect
-    ? gasEfficiency * indirectHXEffectiveness
+    ? cascadeAdjustedGasEfficiency * indirectHXEffectiveness
     : isCentralSteamHX
     ? steamCombinedEfficiencyRaw
-    : gasEfficiency;
+    : cascadeAdjustedGasEfficiency;
   const gasInputBTUH = totalBTUH / effectiveGasEfficiency;
   const resistanceInputKW = totalKW;
   const cop = hpwhCOP(effectiveHpwhAmbient, effectiveInletF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
@@ -269,7 +281,9 @@ export function runCalc(input: DhwInputs): CalcResult {
   if (isCentralHybrid) {
     const hybridGasBTU = annualTotalBTU * (1 - hybridSafeRatio);
     const hybridHpwhBTU = annualTotalBTU * hybridSafeRatio;
-    annualGasTherms = hybridGasBTU / (gasEfficiency * 100000);
+    // Hybrid's gas backup leg gets the same cascade bonus as a standalone
+    // gas plant of equivalent size — staging works the same way.
+    annualGasTherms = hybridGasBTU / (cascadeAdjustedGasEfficiency * 100000);
     annualHPWHKWh_total =
       hybridHpwhBTU / 3412 / annualCOP +
       (swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0);

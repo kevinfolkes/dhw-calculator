@@ -366,3 +366,45 @@ describe("recirc control modes (Phase E)", () => {
     expect(r.recircLossSavingsBTUH).toBe(0);
   });
 });
+
+describe("multi-boiler cascade", () => {
+  it("4-boiler cascade burns less gas than single-boiler (part-load efficiency bonus)", () => {
+    const single = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", boilerCount: 1 });
+    const cascade = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", boilerCount: 4 });
+    expect(cascade.annualGasTherms).toBeLessThan(single.annualGasTherms);
+  });
+
+  it("cascade efficiency bonus caps at 4 boilers", () => {
+    const four = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", boilerCount: 4 });
+    const eight = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", boilerCount: 8 });
+    expect(eight.annualGasTherms).toBeCloseTo(four.annualGasTherms, 0);
+  });
+
+  it("cascade premium increases capCost", () => {
+    const single = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", boilerCount: 1 });
+    const four = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", boilerCount: 4 });
+    const singleCap = single.autoSize?.recommended?.capCost ?? 0;
+    const fourCap = four.autoSize?.recommended?.capCost ?? 0;
+    expect(fourCap).toBeGreaterThan(singleCap);
+  });
+
+  it("N+1 redundancy increases capCost vs N at the same boiler count", () => {
+    const n = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", boilerCount: 4, cascadeRedundancy: "N" });
+    const np1 = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", boilerCount: 4, cascadeRedundancy: "N+1" });
+    const nCap = n.autoSize?.recommended?.capCost ?? 0;
+    const np1Cap = np1.autoSize?.recommended?.capCost ?? 0;
+    expect(np1Cap).toBeGreaterThan(nCap);
+  });
+
+  it("cascade params have no effect on non-cascade-eligible systems (HPWH)", () => {
+    const single = runCalc({ ...DEFAULT_INPUTS, systemType: "central_hpwh", boilerCount: 1 });
+    const four = runCalc({ ...DEFAULT_INPUTS, systemType: "central_hpwh", boilerCount: 4 });
+    expect(four.annualHPWHKWh_total).toBeCloseTo(single.annualHPWHKWh_total, 0);
+  });
+
+  it("central_indirect cascade applies efficiency bonus to the boiler side", () => {
+    const single = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect", boilerCount: 1 });
+    const four = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect", boilerCount: 4 });
+    expect(four.annualGasTherms).toBeLessThan(single.annualGasTherms);
+  });
+});

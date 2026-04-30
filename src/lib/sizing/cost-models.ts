@@ -4,7 +4,13 @@
  * *only* used by the auto-sizer's 15-year lifecycle-total comparison; they
  * do not feed the annual energy results.
  */
-import { CENTRAL_BOILER_COST_FACTOR, type CentralBoilerType } from "@/lib/engineering/constants";
+import {
+  CENTRAL_BOILER_COST_FACTOR,
+  cascadeCostPremium,
+  totalInstalledMBHWithRedundancy,
+  type CascadeRedundancy,
+  type CentralBoilerType,
+} from "@/lib/engineering/constants";
 import type { SystemTypeKey } from "@/lib/engineering/system-types";
 
 export interface InstalledCostParams {
@@ -17,6 +23,12 @@ export interface InstalledCostParams {
    *  the gas-backup leg of central_hybrid. Non-condensing boilers cost ~28%
    *  less for the same input rating. Defaults to "condensing" if absent. */
   boilerType?: CentralBoilerType;
+  /** Number of boilers in a cascade. Defaults to 1 (single-boiler plant).
+   *  >1 triggers manifold/control cost premium and (with N+1 redundancy)
+   *  larger total installed MBH. */
+  boilerCount?: number;
+  /** Cascade redundancy mode. Defaults to "N" (no redundancy). */
+  cascadeRedundancy?: CascadeRedundancy;
 }
 
 export function installedCost(
@@ -25,9 +37,21 @@ export function installedCost(
   totalUnits: number,
 ): number {
   const boilerFactor = CENTRAL_BOILER_COST_FACTOR[params.boilerType ?? "condensing"];
+  const boilerCount = params.boilerCount ?? 1;
+  const redundancy = params.cascadeRedundancy ?? "N";
+  const cascadePremium = cascadeCostPremium(boilerCount);
+  // For cascade systems, the per-MBH cost applies to the TOTAL installed
+  // capacity (which is grossed up under N+1 redundancy), not the active
+  // duty. Single-boiler plants pass through unchanged.
+  const installedInputMBH = totalInstalledMBHWithRedundancy(
+    params.inputMBH ?? 0,
+    boilerCount,
+    redundancy,
+  );
 
   if (systemType === "central_gas") {
-    return boilerFactor * (15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12);
+    return cascadePremium * boilerFactor *
+      (15000 + (params.storageGal ?? 0) * 8 + installedInputMBH * 12);
   }
   if (systemType === "central_gas_tankless") {
     // Modulating condensing tankless central plant: $4,000 base + $4/MBH
@@ -40,8 +64,10 @@ export function installedCost(
     // Boiler-equivalent cost (same as central_gas) + 25% markup for the
     // indirect storage tank / plate HX, controls, and the secondary loop
     // pumping that distinguishes an indirect plant from a direct-fired
-    // central gas water heater.
-    return 1.25 * boilerFactor * (15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12);
+    // central gas water heater. Cascade premium applies to the boiler
+    // side of the cost.
+    return 1.25 * cascadePremium * boilerFactor *
+      (15000 + (params.storageGal ?? 0) * 8 + installedInputMBH * 12);
   }
   if (systemType === "central_hybrid") {
     // HPWH primary + gas backup: full HPWH cost on the primary side
@@ -49,9 +75,11 @@ export function installedCost(
     // central_gas plant on the backup side (using `inputMBH` as the gas
     // backup). The 60% factor reflects that the gas leg is sized for the
     // peak shortfall rather than the full load — smaller burner, same
-    // venting/controls/manifold complexity. Storage is shared.
+    // venting/controls/manifold complexity. Storage is shared. Cascade
+    // premium applies to the gas-backup leg only.
     const hpwhPart = 40000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
-    const gasPart = 0.6 * boilerFactor * (15000 + (params.inputMBH ?? 0) * 12);
+    const gasPart = 0.6 * cascadePremium * boilerFactor *
+      (15000 + installedInputMBH * 12);
     return hpwhPart + gasPart;
   }
   if (systemType === "central_steam_hx") {

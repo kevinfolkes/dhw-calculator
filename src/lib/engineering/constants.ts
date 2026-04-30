@@ -261,6 +261,60 @@ export const CENTRAL_BOILER_COST_FACTOR: Record<CentralBoilerType, number> = {
 };
 
 // ---------------------------------------------------------------------------
+// Multi-boiler cascade modeling. Real central plants typically install 2–6
+// modulating-condensing boilers in a primary/secondary loop with cascade
+// staging controls. This captures three real-world effects the single-boiler
+// model misses:
+//
+//  1. Manifold / cascade-controller premium on capex (~5% per added boiler).
+//     Source: RSMeans 23 81 16, ASHRAE Apps Ch. 51 Table 9 commentary.
+//  2. Part-load seasonal efficiency uplift from staging — at light loads
+//     fewer boilers fire, each at a higher individual modulation point where
+//     condensing efficiency peaks. Bonus +1% per added boiler up to a +3%
+//     cap (diminishing returns past ~4 boilers).
+//     Source: Lochinvar Knight Cascade application data; AERCO Innovation
+//     cascade-staging seasonal-efficiency studies.
+//  3. N+1 redundancy: when chosen, total installed MBH is grossed up so any
+//     (N-1) boilers cover the design load — costs scale with the actual
+//     installed capacity, not just the active duty.
+// ---------------------------------------------------------------------------
+export type CascadeRedundancy = "N" | "N+1";
+
+/** Per-additional-boiler installed-cost premium (manifolds, controls, etc.) */
+export const CASCADE_COST_PREMIUM_PER_BOILER = 0.05;
+
+/** Per-additional-boiler seasonal-efficiency uplift (additive to gas η). */
+export const CASCADE_EFFICIENCY_BONUS_PER_BOILER = 0.01;
+
+/** Maximum cascade efficiency bonus (~3% — beyond ~4 boilers gains plateau). */
+export const CASCADE_EFFICIENCY_BONUS_CAP = 0.03;
+
+/** Returns the seasonal-efficiency bonus (0–0.03) for a given boiler count. */
+export function cascadeEfficiencyBonus(boilerCount: number): number {
+  const n = Math.max(1, Math.floor(boilerCount));
+  return Math.min(CASCADE_EFFICIENCY_BONUS_CAP, CASCADE_EFFICIENCY_BONUS_PER_BOILER * (n - 1));
+}
+
+/** Returns the installed-cost premium multiplier (1.00–~1.35). */
+export function cascadeCostPremium(boilerCount: number): number {
+  const n = Math.max(1, Math.floor(boilerCount));
+  return 1 + CASCADE_COST_PREMIUM_PER_BOILER * (n - 1);
+}
+
+/** Total installed MBH when applying N+1 redundancy. Returns the active duty
+ *  unchanged for "N" mode. For "N+1" mode, total = activeDuty × N/(N-1) so
+ *  any (N-1) boilers can cover the active load. */
+export function totalInstalledMBHWithRedundancy(
+  activeDutyMBH: number,
+  boilerCount: number,
+  redundancy: CascadeRedundancy,
+): number {
+  const n = Math.max(1, Math.floor(boilerCount));
+  if (redundancy === "N" || n < 2) return activeDutyMBH;
+  return activeDutyMBH * (n / (n - 1));
+}
+
+// ---------------------------------------------------------------------------
 // In-unit gas tank WH (ENERGY STAR, AHRI Directory, DOE UEF)
 // ---------------------------------------------------------------------------
 export type GasTankSize = 40 | 50 | 75 | 100;

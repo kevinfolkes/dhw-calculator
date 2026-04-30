@@ -6,6 +6,9 @@ import { Field, NumberInput, SelectInput } from "@/components/ui/Field";
 import { Grid } from "@/components/ui/Grid";
 import {
   ASHRAE_APT_DEMAND,
+  CASCADE_COST_PREMIUM_PER_BOILER,
+  CASCADE_EFFICIENCY_BONUS_CAP,
+  CASCADE_EFFICIENCY_BONUS_PER_BOILER,
   CENTRAL_BOILER_COST_FACTOR,
   CENTRAL_BOILER_DEFAULT_EFFICIENCY,
   CENTRAL_BOILER_LABEL,
@@ -14,6 +17,9 @@ import {
   HPWH_TIER_ADJUSTMENT,
   MONTH_DAYS,
   RECIRC_CONTROL_LABEL,
+  cascadeCostPremium,
+  cascadeEfficiencyBonus,
+  type CascadeRedundancy,
   type CentralBoilerType,
   type ClimateZoneKey,
   type HPWHTier,
@@ -322,6 +328,45 @@ export function BuildingTab({ inputs, update }: Props) {
                 ]}
               />
             </Field>}
+            {showGasParams && (
+              <Field
+                label="Boiler count (cascade)"
+                hint={(() => {
+                  const bonus = cascadeEfficiencyBonus(inputs.boilerCount);
+                  const premium = cascadeCostPremium(inputs.boilerCount);
+                  if (inputs.boilerCount <= 1) {
+                    return `Single-boiler plant. Increase to model a cascade — each added boiler gives +${(CASCADE_EFFICIENCY_BONUS_PER_BOILER * 100).toFixed(0)}% seasonal-efficiency uplift (capped at +${(CASCADE_EFFICIENCY_BONUS_CAP * 100).toFixed(0)}%) and +${(CASCADE_COST_PREMIUM_PER_BOILER * 100).toFixed(0)}% installed-cost premium for the manifold/controls.`;
+                  }
+                  return `Cascade of ${inputs.boilerCount} boilers. +${(bonus * 100).toFixed(1)}% seasonal-efficiency uplift; ×${premium.toFixed(2)} cost premium for manifold + controls.`;
+                })()}
+              >
+                <NumberInput
+                  value={inputs.boilerCount}
+                  onChange={(n) => update("boilerCount", n)}
+                  min={1}
+                  max={8}
+                />
+              </Field>
+            )}
+            {showGasParams && (
+              <Field
+                label="Cascade redundancy"
+                hint={
+                  inputs.cascadeRedundancy === "N+1"
+                    ? `N+1: total installed capacity grossed up so any (${inputs.boilerCount}-1)=${Math.max(0, inputs.boilerCount - 1)} boilers cover design load. Standard for critical multifamily DHW (50+ units).`
+                    : "N: installed capacity equals design duty (no redundancy). Acceptable for smaller plants where downtime during a single-boiler failure is tolerable."
+                }
+              >
+                <SelectInput<CascadeRedundancy>
+                  value={inputs.cascadeRedundancy}
+                  onChange={(v) => update("cascadeRedundancy", v)}
+                  options={[
+                    { value: "N", label: "N (no redundancy)" },
+                    { value: "N+1", label: "N+1 (one spare boiler)" },
+                  ]}
+                />
+              </Field>
+            )}
             {showGasParams && <Field
               label="Gas efficiency (manual override)"
               suffix="%"
