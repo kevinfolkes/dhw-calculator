@@ -191,3 +191,95 @@ describe("central boiler type", () => {
     expect(nonCondCap).toBeLessThan(condCap);
   });
 });
+
+describe("preheat modifiers (Phase D)", () => {
+  it("solar-only preheat reduces annual gas therms vs preheat=none", () => {
+    const baseline = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    const withSolar = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      preheat: "solar",
+      solarCollectorAreaSqft: 200,
+    });
+    expect(withSolar.annualGasTherms).toBeLessThan(baseline.annualGasTherms);
+    expect(withSolar.annualSolarFraction).toBeGreaterThan(0);
+    expect(withSolar.annualSolarFraction).toBeLessThanOrEqual(0.85);
+    expect(withSolar.annualPreheatLiftF).toBeGreaterThan(0);
+    expect(withSolar.preheatType).toBe("solar");
+    // Monthly fractions must all be within [0, 0.85]
+    for (const sf of withSolar.monthlySolarFractions) {
+      expect(sf).toBeGreaterThanOrEqual(0);
+      expect(sf).toBeLessThanOrEqual(0.85);
+    }
+  });
+
+  it("dwhr-only preheat reduces annual gas therms vs preheat=none", () => {
+    const baseline = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    const withDwhr = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      preheat: "dwhr",
+      dwhrEffectiveness: 0.55,
+      dwhrCoverage: 0.6,
+    });
+    expect(withDwhr.annualGasTherms).toBeLessThan(baseline.annualGasTherms);
+    expect(withDwhr.annualDwhrLiftF).toBeGreaterThan(0);
+    // DWHR-only should have zero solar fraction even though preheat is active
+    expect(withDwhr.annualSolarFraction).toBe(0);
+  });
+
+  it("solar+dwhr saves more therms than either alone", () => {
+    const both = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      preheat: "solar+dwhr",
+      solarCollectorAreaSqft: 200,
+      dwhrEffectiveness: 0.55,
+      dwhrCoverage: 0.6,
+    });
+    const solarOnly = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      preheat: "solar",
+      solarCollectorAreaSqft: 200,
+    });
+    const dwhrOnly = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      preheat: "dwhr",
+      dwhrEffectiveness: 0.55,
+      dwhrCoverage: 0.6,
+    });
+    expect(both.annualGasTherms).toBeLessThanOrEqual(solarOnly.annualGasTherms);
+    expect(both.annualGasTherms).toBeLessThanOrEqual(dwhrOnly.annualGasTherms);
+    // Combined lift respects the 0.95 × ΔT cap
+    const ceiling = 0.95 * (both.climate.avgAnnual !== 0
+      ? DEFAULT_INPUTS.storageSetpointF - both.effectiveInletF + both.annualPreheatLiftF
+      : 1);
+    expect(both.annualPreheatLiftF).toBeLessThanOrEqual(ceiling + 0.01);
+  });
+
+  it("preheat=none returns sentinel zero values for all preheat fields", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS });
+    expect(r.preheatType).toBe("none");
+    expect(r.annualSolarFraction).toBe(0);
+    expect(r.annualDwhrLiftF).toBe(0);
+    expect(r.annualPreheatLiftF).toBe(0);
+    expect(r.monthlySolarFractions.length).toBe(12);
+    for (const sf of r.monthlySolarFractions) {
+      expect(sf).toBe(0);
+    }
+  });
+
+  it("solar lift is larger in summer than in winter (insolation curve)", () => {
+    const r = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      preheat: "solar",
+      solarCollectorAreaSqft: 200,
+    });
+    const jan = r.monthlySolarFractions[0];
+    const jul = r.monthlySolarFractions[6];
+    expect(jul).toBeGreaterThan(jan);
+  });
+});

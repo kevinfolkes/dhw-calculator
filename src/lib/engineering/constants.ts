@@ -354,3 +354,57 @@ export const INUNIT_RESISTANCE_TANK_SPEC: Record<InunitResistanceTankSize, Inuni
   66: { fhr: 53, uef: 0.91, kw: 5.5 },
   80: { fhr: 64, uef: 0.91, kw: 5.5 },
 };
+
+// ---------------------------------------------------------------------------
+// Preheat modifier constants — Phase D
+//
+// Solar thermal:
+//   Reference ASHRAE Handbook Applications Ch. 36 (Solar Energy Use); ASHRAE
+//   93 (collector test method). Monthly insolation values (BTU/day/ft²) are
+//   approximate averages of NREL TMY3 normals across each climate-archetype
+//   band — intentionally coarse to avoid encoding latitude as a separate
+//   input. eta_collector defaults to 0.55 (typical flat-plate annual avg).
+//
+// DWHR (drainwater heat recovery):
+//   Reference CSA B55.1 / B55.2; NREL DWHR field studies (Schoenbauer 2012,
+//   2017). Vertical units run 0.40–0.60 effectiveness; we default to 0.50.
+//   Drain temp settles to ~95°F after shower mixing — well-documented value
+//   used as the warm-side reference temp for the heat-exchange driving ΔT.
+// ---------------------------------------------------------------------------
+
+/**
+ * Average daily clear-sky solar insolation (BTU/day per ft² of collector
+ * aperture), by climate archetype and month index (0 = Jan). Derived from
+ * NREL TMY3 normals aggregated across each archetype's representative cities.
+ * Used by the solar-preheat model to estimate monthly solar fraction without
+ * requiring full latitude / tilt / azimuth inputs.
+ */
+export const SOLAR_INSOLATION_BTU_PER_SQFT_PER_DAY: Record<HDDArchetype, number[]> = {
+  hot:       [1100, 1300, 1600, 1850, 2000, 2050, 2000, 1900, 1700, 1450, 1200, 1050],
+  mixed:     [800,  1050, 1400, 1700, 1900, 1950, 1900, 1750, 1500, 1200, 850,  700],
+  cold:      [550,  850,  1200, 1500, 1700, 1800, 1750, 1550, 1250, 950,  600,  450],
+  very_cold: [400,  650,  1000, 1350, 1600, 1700, 1650, 1400, 1100, 800,  450,  300],
+};
+
+/**
+ * Annual-average flat-plate solar collector efficiency (dimensionless). Real
+ * collectors test 0.40–0.65 depending on tilt, irradiance, and inlet temp.
+ * 0.55 is a representative annual mean for typical multifamily applications.
+ */
+export const SOLAR_COLLECTOR_DEFAULT_ETA = 0.55;
+
+/**
+ * Default DWHR (drainwater heat recovery) effectiveness — fraction of the
+ * available drain-side temperature lift transferred to the incoming cold
+ * supply. Vertical falling-film units typically report 0.40–0.60 per CSA
+ * B55.2; 0.50 is a conservative typical.
+ */
+export const DWHR_DEFAULT_EFFECTIVENESS = 0.50;
+
+/**
+ * Reference drain temperature (°F) after fixture mixing. Used as the warm
+ * side of the DWHR ΔT. ~95°F reflects measured post-shower drain temps in
+ * NREL studies (slightly cooled from the 105°F nominal shower temp by
+ * splash and air contact in the trap stack).
+ */
+export const DWHR_DRAIN_TEMP_F = 95;

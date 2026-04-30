@@ -31,6 +31,13 @@ import {
   monthlyInletAdjustment,
 } from "@/lib/engineering/climate";
 import { combiCOPAdjustment, hpwhCOP, hpwhCapacityFactor } from "@/lib/engineering/hpwh";
+import {
+  combinedPreheatLiftF,
+  dwhrLiftF,
+  solarMonthlyFraction,
+  solarMonthlyLiftF,
+} from "@/lib/engineering/preheat";
+import { DWHR_DRAIN_TEMP_F } from "@/lib/engineering/constants";
 import { recircStandbyLoss } from "@/lib/engineering/recirc";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import { autoSize } from "@/lib/sizing/auto-size";
@@ -54,9 +61,34 @@ export function runCalc(input: DhwInputs): CalcResult {
     hybridSplitRatio, steamSourceEfficiency, steamHXEffectiveness, steamSupplyPressurePSIG,
     inunitGasTanklessCombiInput, inunitGasCombiBufferTankSize, inunitResistanceTankSize,
     bufferTankEnabled,
+    preheat, solarCollectorAreaSqft, dwhrEffectiveness, dwhrCoverage,
   } = input;
 
-  const effectiveInletF = input.inletWaterF ?? deriveInletWaterF(input.climateZone);
+  // Base inlet temp BEFORE any preheat modifier — the climate-derived (or
+  // manual override) annual mean. Phase D adds a preheat lift on top.
+  const baseEffectiveInletF = input.inletWaterF ?? deriveInletWaterF(input.climateZone);
+
+  // ---- PREHEAT MODIFIERS (Phase D) --------------------------------------
+  // Compute the annual-average preheat lift here so design-day calcs (FHR,
+  // sizing, peak BTU/hr) use a realistic annual lift rather than zero.
+  // The monthly model below recomputes a per-month lift for the energy
+  // rollup. Preheat fields default to "none" / 0 so existing behavior is
+  // preserved when the modifier is inactive.
+  const preheatActive = preheat !== "none";
+  const solarActive = preheat === "solar" || preheat === "solar+dwhr";
+  const dwhrActive = preheat === "dwhr" || preheat === "solar+dwhr";
+  const hddArchetypePre = getMonthlyHDDArchetype(input.climateZone);
+  // Use a coarse annual DHW BTU for the annual-average solar fraction (sum
+  // of avg-day demand × annual rise × 365). Same denominator the monthly
+  // model uses, just aggregated to annual so the design-day inlet sees the
+  // same lift the energy-weighted average will produce.
+  // We need avg-day demand for this — computed below — so we defer the
+  // annual-average preheat lift until after the demand calc and re-resolve
+  // `effectiveInletF` then. Use the base value for the demand calc itself
+  // (demand is climate / occupancy driven, not inlet-temp driven).
+  // Effective inlet for the rest of the pipeline starts at the base; we
+  // patch in the annual lift right after demand is known.
+  let effectiveInletF = baseEffectiveInletF;
 
   const totalUnits = unitsStudio + units1BR + units2BR + units3BR;
   const climate = CLIMATE_DESIGN[climateZone];
@@ -75,6 +107,58 @@ export function runCalc(input: DhwInputs): CalcResult {
     demandMethod, occupantsPerUnit, gpcd,
   });
   const { peakHourGPH: peakHourDemand, peakDayGPH: peakDayDemand, avgDayGPH: avgDayDemand } = dem;
+
+  // ---- PREHEAT LIFT — annual average (drives design-day calcs) ----------
+  // With demand resolved, compute the annual-averaged preheat lift and patch
+  // `effectiveInletF` so all downstream design-day math sees a realistic
+  // pre-heated inlet. The monthly model below computes its own per-month
+  // lift; we keep the annual lift consistent with the energy-weighted
+  // average the monthly rollup will produce.
+  let annualSolarFraction = 0;
+  let annualDwhrLiftF = 0;
+  let annualPreheatLiftF = 0;
+  const monthlySolarFractions: number[] = new Array(12).fill(0);
+  if (preheatActive) {
+    // Annual baseline DHW BTU at base inlet (no preheat) — used as the
+    // denominator for the energy-weighted annual solar fraction.
+    const annualBaseDHW_BTU =
+      avgDayDemand * 8.33 * Math.max(0, storageSetpointF - baseEffectiveInletF) * 365;
+
+    if (solarActive) {
+      // Sum monthly-collected BTU vs monthly load to derive an
+      // energy-weighted annual SF. Per-month inlet uses the climate's
+      // monthly inlet adjustment so the SF accounts for warmer summer
+      // inlets reducing the load share solar can cover.
+      let collectedAnnualBTU = 0;
+      for (let m = 0; m < 12; m++) {
+        const monthInletBase = baseEffectiveInletF + monthlyInletAdjustment(m, input.climateZone);
+        const monthDHW_BTU =
+          avgDayDemand * 8.33 * Math.max(0, storageSetpointF - monthInletBase) * MONTH_DAYS[m];
+        const sf = solarMonthlyFraction(
+          m, solarCollectorAreaSqft, hddArchetypePre, monthDHW_BTU, MONTH_DAYS[m],
+        );
+        monthlySolarFractions[m] = sf;
+        collectedAnnualBTU += sf * monthDHW_BTU;
+      }
+      annualSolarFraction = annualBaseDHW_BTU > 0
+        ? collectedAnnualBTU / annualBaseDHW_BTU
+        : 0;
+    }
+
+    if (dwhrActive) {
+      annualDwhrLiftF = dwhrLiftF(
+        dwhrEffectiveness, dwhrCoverage, DWHR_DRAIN_TEMP_F, baseEffectiveInletF,
+      );
+    }
+
+    const annualSolarLiftF = solarActive
+      ? annualSolarFraction * Math.max(0, storageSetpointF - baseEffectiveInletF)
+      : 0;
+    annualPreheatLiftF = combinedPreheatLiftF(
+      annualSolarLiftF, annualDwhrLiftF, storageSetpointF, baseEffectiveInletF,
+    );
+    effectiveInletF = baseEffectiveInletF + annualPreheatLiftF;
+  }
 
   // ---- RECIRC ------------------------------------------------------------
   const { lossBTUH: recircLossBTUH, lossKW: recircLossKW } = recircStandbyLoss({
@@ -509,7 +593,33 @@ export function runCalc(input: DhwInputs): CalcResult {
     const daysInMonth = MONTH_DAYS[m];
     const monthAmbient = climate.avgAnnual + monthlyAmbientAdjustment(m, climateZone);
     const monthMechRoom = climate.mechRoomAnnual + monthlyAmbientAdjustment(m, climateZone) * 0.5;
-    const monthInlet = effectiveInletF + monthlyInletAdjustment(m, climateZone);
+    // Base monthly inlet (no preheat) — climate-only.
+    const baseMonthInlet = baseEffectiveInletF + monthlyInletAdjustment(m, climateZone);
+    // Per-month preheat lift: solar varies by month (insolation), DWHR is
+    // a constant lift driven off the base monthly inlet (the available ΔT
+    // shrinks slightly in summer when inlet is warmer — `dwhrLiftF` handles
+    // that automatically via the (drainTemp - baseInlet) term).
+    let monthSolarLiftF = 0;
+    if (solarActive) {
+      const monthDHWBaseBTU =
+        avgDayDemand * 8.33 * Math.max(0, storageSetpointF - baseMonthInlet) * daysInMonth;
+      monthSolarLiftF = solarMonthlyLiftF(
+        m,
+        solarCollectorAreaSqft,
+        hddArchetypePre,
+        monthDHWBaseBTU,
+        daysInMonth,
+        storageSetpointF,
+        baseMonthInlet,
+      );
+    }
+    const monthDwhrLiftF = dwhrActive
+      ? dwhrLiftF(dwhrEffectiveness, dwhrCoverage, DWHR_DRAIN_TEMP_F, baseMonthInlet)
+      : 0;
+    const monthPreheatLiftF = preheatActive
+      ? combinedPreheatLiftF(monthSolarLiftF, monthDwhrLiftF, storageSetpointF, baseMonthInlet)
+      : 0;
+    const monthInlet = baseMonthInlet + monthPreheatLiftF;
 
     const monthDHW_rise_central = storageSetpointF - monthInlet;
     const monthDHWBTU_central = avgDayDemand * 8.33 * monthDHW_rise_central * daysInMonth;
@@ -889,6 +999,13 @@ export function runCalc(input: DhwInputs): CalcResult {
     inunitGasCombiBufferRequiredGal,
     inunitGasCombiBufferSelectedGal,
     inunitGasCombiPeakInstantGPM,
+    preheatType: preheat,
+    annualSolarFraction: preheatActive ? +annualSolarFraction.toFixed(4) : 0,
+    annualDwhrLiftF: preheatActive ? +annualDwhrLiftF.toFixed(2) : 0,
+    annualPreheatLiftF: preheatActive ? +annualPreheatLiftF.toFixed(2) : 0,
+    monthlySolarFractions: preheatActive
+      ? monthlySolarFractions.map((v) => +v.toFixed(4))
+      : new Array(12).fill(0),
   };
 }
 

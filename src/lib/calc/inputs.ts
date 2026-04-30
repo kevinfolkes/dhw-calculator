@@ -24,6 +24,20 @@ import type { SystemTypeKey } from "@/lib/engineering/system-types";
 
 export type DemandMethod = "ashrae" | "hunter" | "occupancy";
 
+/**
+ * Preheat modifier (Phase D). Pre-heats incoming cold water before any
+ * primary system runs:
+ *   - "none": no preheat (default)
+ *   - "solar": solar thermal collector array + storage tank
+ *   - "dwhr": drainwater heat recovery on showers / fixtures
+ *   - "solar+dwhr": both modifiers active simultaneously
+ *
+ * Preheat applies as a temperature lift on the resolved inlet (either
+ * climate-derived or manual override). Affects every system type uniformly
+ * via a single integration point in the pipeline.
+ */
+export type PreheatType = "none" | "solar" | "dwhr" | "solar+dwhr";
+
 export interface UnitCount {
   br0: number;
   br1: number;
@@ -189,6 +203,29 @@ export interface DhwInputs {
 
   // Fixture flow rates (GPM), used by tankless peak-demand calc
   fixtureGPM: FixtureGPM;
+
+  // Preheat modifiers (Phase D) — architectural addition that lifts the
+  // effective inlet water temp before any primary system runs. Applies to
+  // every system type uniformly via a single point of integration in the
+  // pipeline. Default `preheat: "none"` preserves baseline behavior.
+  /** Selected preheat configuration: none, solar thermal, DWHR, or both. */
+  preheat: PreheatType;
+  /** Solar collector aperture area (ft²). Drives the monthly solar fraction
+   *  via climate-archetype insolation tables. Range 0–1000+ for multifamily;
+   *  default 0 (so enabling solar without choosing an area produces a
+   *  zero-fraction result, not a runtime nudge). */
+  solarCollectorAreaSqft: number;
+  /** Solar storage tank size (gal). Informational only at the current
+   *  modeling fidelity — the monthly-energy balance assumes the tank is
+   *  large enough to absorb daily peak collection. Range 40–500. */
+  solarStorageGal: number;
+  /** DWHR unit effectiveness (dimensionless 0–1). Vertical falling-film
+   *  units typically rate 0.40–0.60 per CSA B55.2; 0.50 default. */
+  dwhrEffectiveness: number;
+  /** Fraction of fixtures (typically showers) plumbed through the DWHR
+   *  unit. Sinks rarely benefit because their drain temp doesn't develop
+   *  enough ΔT before reaching the trap. Default 0.5. */
+  dwhrCoverage: number;
 }
 
 export const DEFAULT_INPUTS: DhwInputs = {
@@ -246,4 +283,9 @@ export const DEFAULT_INPUTS: DhwInputs = {
   inunitGasCombiBufferTankSize: 40,
   inunitResistanceTankSize: 50,
   fixtureGPM: { ...DEFAULT_FIXTURE_GPM },
+  preheat: "none",
+  solarCollectorAreaSqft: 0,
+  solarStorageGal: 80,
+  dwhrEffectiveness: 0.50,
+  dwhrCoverage: 0.5,
 };

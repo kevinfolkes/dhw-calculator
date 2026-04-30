@@ -1,4 +1,5 @@
 import type { ClimateDesign, GasTankSpec, GasTanklessSpec, HPWHTankSpec } from "@/lib/engineering/constants";
+import type { PreheatType } from "./inputs";
 
 export interface ComplianceFlag {
   level: "ok" | "info" | "warn" | "error";
@@ -281,4 +282,21 @@ export interface CalcResult {
    *  selected per-unit input × tankless UEF. Zero for all other system
    *  types. */
   inunitGasCombiPeakInstantGPM: number;
+  /** Echo of the selected preheat modifier ("none" | "solar" | "dwhr" |
+   *  "solar+dwhr"). Lets tabs key off the result alone without re-reading
+   *  inputs. */
+  preheatType: PreheatType;
+  /** Energy-weighted annual solar fraction (0..0.85). Sum-of-monthly-BTU
+   *  contribution divided by the annual DHW load. Zero when solar is
+   *  inactive. */
+  annualSolarFraction: number;
+  /** Constant DWHR inlet lift (°F) applied across all months. Zero when
+   *  DWHR is inactive. */
+  annualDwhrLiftF: number;
+  /** Combined annual-average preheat lift (°F) applied to the design-day
+   *  inlet. Zero when `preheatType === "none"`. */
+  annualPreheatLiftF: number;
+  /** Per-month solar fraction (0..0.85), 12 entries indexed Jan..Dec. All
+   *  zero when solar is inactive. */
+  monthlySolarFractions: number[];
 }

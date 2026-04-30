@@ -123,6 +123,56 @@ export function EnergyTab({ inputs, result }: Props) {
         </Card>
       )}
 
+      {(result.preheatType === "solar" || result.preheatType === "solar+dwhr") && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Monthly Solar Fraction — annual avg{" "}
+              {(result.annualSolarFraction * 100).toFixed(1)}%
+            </CardTitle>
+          </CardHeader>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
+            Share of monthly DHW load supplied by the solar collector array
+            (capped at 85%).
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(12, 1fr)",
+              gap: 4,
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+            }}
+          >
+            {monthly.map((row, i) => {
+              const sf = result.monthlySolarFractions[i] ?? 0;
+              const pct = (sf * 100).toFixed(0);
+              const intensity = Math.min(1, sf / 0.85);
+              return (
+                <div
+                  key={row.month}
+                  style={{
+                    textAlign: "center",
+                    padding: "8px 2px",
+                    background: `rgba(217, 119, 6, ${0.08 + intensity * 0.30})`,
+                    borderRadius: 6,
+                    border: "1px solid rgba(217, 119, 6, 0.2)",
+                  }}
+                  title={`${row.month}: ${pct}% solar`}
+                >
+                  <div style={{ color: "var(--text-muted)", fontSize: 10 }}>
+                    {row.month}
+                  </div>
+                  <div style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+                    {pct}%
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Monthly Cost</CardTitle>

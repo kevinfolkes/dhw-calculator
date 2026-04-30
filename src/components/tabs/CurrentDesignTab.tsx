@@ -19,6 +19,13 @@ const A_OK = "var(--accent-emerald)";
 const A_BAD = "var(--accent-red)";
 const A_WARN = "var(--accent-amber)";
 
+const PREHEAT_LABEL: Record<"none" | "solar" | "dwhr" | "solar+dwhr", string> = {
+  none: "None",
+  solar: "Solar thermal",
+  dwhr: "DWHR",
+  "solar+dwhr": "Solar + DWHR",
+};
+
 interface Props {
   inputs: DhwInputs;
   result: CalcResult;
@@ -285,6 +292,47 @@ export function CurrentDesignTab({ inputs, result }: Props) {
           />
         </Grid>
       </Card>
+
+      {/* 1b. Preheat contribution — only when a modifier is active. Surfaces
+            the lift so users can see the inlet they're actually sizing against. */}
+      {result.preheatType !== "none" && (
+        <Card>
+          <SectionHeader
+            n={1}
+            title={`Preheat — ${PREHEAT_LABEL[result.preheatType]}`}
+            sub="Lifts effective inlet before primary system runs"
+          />
+          <Grid cols={3}>
+            <MetricCard
+              label="Annual preheat lift"
+              value={`+${fmt(result.annualPreheatLiftF, 1)}`}
+              unit="°F"
+              sub={`base inlet → ${fmt(result.effectiveInletF, 1)}°F effective`}
+              accent={A_WARN}
+            />
+            {(result.preheatType === "solar" || result.preheatType === "solar+dwhr") && (
+              <MetricCard
+                label="Annual solar fraction"
+                value={`${(result.annualSolarFraction * 100).toFixed(1)}%`}
+                sub="energy-weighted; cap 85%"
+              />
+            )}
+            {(result.preheatType === "dwhr" || result.preheatType === "solar+dwhr") && (
+              <MetricCard
+                label="DWHR constant lift"
+                value={`+${fmt(result.annualDwhrLiftF, 1)}`}
+                unit="°F"
+                sub={`eff × cov × (${95}°F − inlet)`}
+              />
+            )}
+          </Grid>
+          <p style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.6, marginTop: 10 }}>
+            Sizing and energy calcs below use the preheated inlet. The reduction in
+            primary thermal load shows up directly in annual gas / electric on the
+            Energy tab.
+          </p>
+        </Card>
+      )}
 
       {/* 2. Sizing requirement (central only — for in-unit sizing is per-unit in section 3) */}
       {isCentral && !isCentralTankless && (

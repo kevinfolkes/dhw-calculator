@@ -152,6 +152,41 @@ export function CalculationsTab({ inputs, result }: Props) {
         </Prose>
       </Step>
 
+      {result.preheatType !== "none" && (
+        <Step n={2} title={`Preheat lift — ${result.preheatType}`} subtitle="Phase D modifier">
+          <Prose>
+            Preheat raises the effective cold-water inlet before the primary system runs.
+            Solar contributes a monthly fraction (collected BTU ÷ monthly DHW BTU, capped
+            at 85%); DWHR adds a constant lift driven by drain temp − inlet ΔT × effectiveness
+            × coverage. The combined annual lift is bounded at 0.95 × (setpoint − base inlet).
+          </Prose>
+          {(result.preheatType === "solar" || result.preheatType === "solar+dwhr") && (
+            <Formula>
+              SF<sub>annual</sub> = Σ (SF<sub>m</sub> × DHW<sub>m</sub>) ÷ Σ DHW<sub>m</sub> ={" "}
+              <Result>{(result.annualSolarFraction * 100).toFixed(1)}%</Result>
+            </Formula>
+          )}
+          {(result.preheatType === "dwhr" || result.preheatType === "solar+dwhr") && (
+            <Formula>
+              DWHR lift = eff × coverage × (drainTemp − inletBase) ={" "}
+              {inputs.dwhrEffectiveness.toFixed(2)} × {inputs.dwhrCoverage.toFixed(2)} × (95 −{" "}
+              {(result.effectiveInletF - result.annualPreheatLiftF).toFixed(1)}) ={" "}
+              <Result>+{result.annualDwhrLiftF.toFixed(1)}°F</Result>
+            </Formula>
+          )}
+          <Formula>
+            inlet<sub>effective</sub> = inlet<sub>base</sub> + lift<sub>preheat</sub> ={" "}
+            {(result.effectiveInletF - result.annualPreheatLiftF).toFixed(1)} + {result.annualPreheatLiftF.toFixed(1)} ={" "}
+            <Result>{result.effectiveInletF.toFixed(1)}°F</Result>
+          </Formula>
+          <Prose>
+            All downstream sizing math (recovery rise, tank capacity, monthly energy) uses
+            this lifted inlet. The reduction in primary thermal load is exactly the share
+            the preheat covered.
+          </Prose>
+        </Step>
+      )}
+
       {/* 03 DEMAND — ASHRAE */}
       <Step n={3} title="Demand — ASHRAE Ch. 51 Table 7 (apt-count)">
         <Prose>

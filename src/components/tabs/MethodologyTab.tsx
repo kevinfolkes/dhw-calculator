@@ -365,6 +365,66 @@ export function MethodologyTab() {
 
       <Card>
         <CardHeader>
+          <CardTitle>8b. Preheat modifiers (solar thermal + DWHR)</CardTitle>
+        </CardHeader>
+        <Prose>
+          <p>
+            Two architectural modifiers lift the effective inlet water temperature
+            before any primary system runs. They apply uniformly to every system
+            type via a single integration point — opt-in via the Building tab, with
+            <code> preheat: &quot;none&quot;</code> as the default.
+          </p>
+          <p>
+            <strong>Solar thermal.</strong> A glazed flat-plate collector array feeds
+            a solar storage tank. The simplified monthly model computes a solar
+            fraction from collector area, climate-archetype insolation, and monthly
+            DHW load, then converts the fraction to an inlet temperature lift:
+          </p>
+          <Formula>
+            SF<sub>m</sub> = clamp((A &times; insolation<sub>m</sub> &times; &eta;) / DHW<sub>m</sub>, 0, 0.85)
+          </Formula>
+          <Formula>
+            lift<sub>solar,m</sub> = SF<sub>m</sub> &times; (storageSetpoint &minus; inletBase<sub>m</sub>)
+          </Formula>
+          <p>
+            This is an annual-energy-equivalent simplification: real systems
+            pre-heat through a separate solar storage tank that the primary heater
+            tops up, but the equivalent monthly lift gives the same kWh / therms
+            reduction at the primary heater. Insolation values (BTU/day/ft²) are
+            aggregated NREL TMY3 normals across each climate archetype; default
+            collector efficiency &eta; = 0.55 (typical flat-plate annual mean).
+            Sources: ASHRAE Handbook Applications Ch. 36 (Solar Energy Use);
+            ASHRAE 93 (collector test method).
+          </p>
+          <p>
+            <strong>Drainwater heat recovery (DWHR).</strong> A vertical
+            falling-film heat exchanger on the drain stack pre-heats incoming cold
+            supply during simultaneous draws. The constant-lift approximation:
+          </p>
+          <Formula>
+            lift<sub>dwhr</sub> = effectiveness &times; coverage &times; (drainTemp &minus; inletBase)
+          </Formula>
+          <p>
+            DWHR only operates during simultaneous flow (water flowing in AND
+            draining at the same time). Applying it as a constant lift across all
+            months is conservative — actual savings depend on use patterns, but
+            for typical residential profiles the model is within &plusmn;10% of
+            measured savings. Drain temp is fixed at 95°F (post-shower mixing),
+            and default effectiveness 0.50 reflects CSA B55.2 vertical-unit ratings
+            (range 0.40&ndash;0.60). Sources: CSA B55.1 / B55.2; NREL DWHR studies
+            (Schoenbauer 2012, 2017).
+          </p>
+          <p>
+            <strong>Combined.</strong> Both lifts add but are bounded at
+            0.95 &times; (storageSetpoint &minus; inletBase) so the math never
+            approaches the asymptotic case where preheat == setpoint (zero primary
+            load).
+          </p>
+        </Prose>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>9. Monthly energy model</CardTitle>
         </CardHeader>
         <Prose>

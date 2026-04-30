@@ -5,18 +5,31 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field, NumberInput, SelectInput } from "@/components/ui/Field";
 import { Grid } from "@/components/ui/Grid";
 import {
+  ASHRAE_APT_DEMAND,
   CENTRAL_BOILER_COST_FACTOR,
   CENTRAL_BOILER_DEFAULT_EFFICIENCY,
   CENTRAL_BOILER_LABEL,
   CLIMATE_DESIGN,
+  DWHR_DRAIN_TEMP_F,
   HPWH_TIER_ADJUSTMENT,
+  MONTH_DAYS,
   type CentralBoilerType,
   type ClimateZoneKey,
   type HPWHTier,
 } from "@/lib/engineering/constants";
-import { deriveInletWaterF } from "@/lib/engineering/climate";
+import { deriveInletWaterF, getMonthlyHDDArchetype } from "@/lib/engineering/climate";
+import {
+  combinedPreheatLiftF,
+  dwhrLiftF,
+  solarMonthlyFraction,
+} from "@/lib/engineering/preheat";
 import { SYSTEM_TYPES, type SystemTypeKey } from "@/lib/engineering/system-types";
-import { DEFAULT_FIXTURE_GPM, type DhwInputs, type FixtureGPM } from "@/lib/calc/inputs";
+import {
+  DEFAULT_FIXTURE_GPM,
+  type DhwInputs,
+  type FixtureGPM,
+  type PreheatType,
+} from "@/lib/calc/inputs";
 
 interface Props {
   inputs: DhwInputs;
@@ -190,6 +203,8 @@ export function BuildingTab({ inputs, update }: Props) {
         </Grid>
       </Card>
 
+      <PreheatCard inputs={inputs} update={update} />
+
       {sys.hasRecirc && (
         <Card>
           <CardHeader>
@@ -230,14 +245,16 @@ export function BuildingTab({ inputs, update }: Props) {
               <SelectInput<CentralBoilerType>
                 value={inputs.centralBoilerType}
                 onChange={(v) => {
-                  // Switching type also resets gasEfficiency to the new
-                  // default IF the user is currently at the previous default
-                  // — preserves manual overrides, follows the user's intent
-                  // when they hadn't customized yet.
-                  const prevDefault = CENTRAL_BOILER_DEFAULT_EFFICIENCY[inputs.centralBoilerType];
-                  if (Math.abs(inputs.gasEfficiency - prevDefault) < 0.005) {
-                    update("gasEfficiency", CENTRAL_BOILER_DEFAULT_EFFICIENCY[v]);
-                  }
+                  // Always reset gasEfficiency to the new type's default when
+                  // boiler type changes — this is what users expect when they
+                  // explicitly pick a boiler type. If they want a non-standard
+                  // efficiency (e.g. 88% for a near-condensing unit) they can
+                  // override it AFTER selecting the type. The previous
+                  // "preserve manual override unless it matches old default"
+                  // logic was too subtle and produced the surprising state
+                  // where the displayed default contradicts the displayed
+                  // value.
+                  update("gasEfficiency", CENTRAL_BOILER_DEFAULT_EFFICIENCY[v]);
                   update("centralBoilerType", v);
                 }}
                 options={[
@@ -495,6 +512,175 @@ function FixtureGPMEditor({
             </div>
           </div>
         </>
+      )}
+    </Card>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Preheat modifiers (Phase D) — solar thermal + drainwater heat recovery.
+// Architectural addition that lifts effective inlet water temp before any
+// primary system runs. Default "none" preserves baseline behavior.
+// -----------------------------------------------------------------------------
+function PreheatCard({
+  inputs,
+  update,
+}: {
+  inputs: DhwInputs;
+  update: <K extends keyof DhwInputs>(key: K, value: DhwInputs[K]) => void;
+}) {
+  const isSolar = inputs.preheat === "solar" || inputs.preheat === "solar+dwhr";
+  const isDwhr = inputs.preheat === "dwhr" || inputs.preheat === "solar+dwhr";
+  const active = inputs.preheat !== "none";
+
+  // Live preview of the annual-average lift (so the user sees impact before
+  // the rest of the calc tabs render). Mirrors the pipeline math exactly:
+  // - solar uses energy-weighted SF across all 12 months
+  // - dwhr is constant lift on the base inlet
+  // - combined uses the 0.95 × ΔT cap
+  const baseInletF = inputs.inletWaterF ?? deriveInletWaterF(inputs.climateZone);
+  const archetype = getMonthlyHDDArchetype(inputs.climateZone);
+  const totalUnits =
+    inputs.unitsStudio + inputs.units1BR + inputs.units2BR + inputs.units3BR;
+  const avgDayDemand = ASHRAE_APT_DEMAND[inputs.occupancyProfile].avg * totalUnits;
+  let annualLiftF = 0;
+  let annualSF = 0;
+  if (active) {
+    const setpoint = inputs.storageSetpointF;
+    let solarLift = 0;
+    if (isSolar) {
+      let collected = 0;
+      let total = 0;
+      for (let m = 0; m < 12; m++) {
+        const monthDHW = avgDayDemand * 8.33 * Math.max(0, setpoint - baseInletF) * MONTH_DAYS[m];
+        const sf = solarMonthlyFraction(
+          m, inputs.solarCollectorAreaSqft, archetype, monthDHW, MONTH_DAYS[m],
+        );
+        collected += sf * monthDHW;
+        total += monthDHW;
+      }
+      annualSF = total > 0 ? collected / total : 0;
+      solarLift = annualSF * Math.max(0, setpoint - baseInletF);
+    }
+    const dwhrL = isDwhr
+      ? dwhrLiftF(inputs.dwhrEffectiveness, inputs.dwhrCoverage, DWHR_DRAIN_TEMP_F, baseInletF)
+      : 0;
+    annualLiftF = combinedPreheatLiftF(solarLift, dwhrL, setpoint, baseInletF);
+  }
+
+  return (
+    <Card accent={active ? "var(--accent-amber, #d97706)" : undefined}>
+      <CardHeader>
+        <CardTitle>Preheat (Solar / DWHR)</CardTitle>
+      </CardHeader>
+      <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.6 }}>
+        Optional pre-heaters that lift the cold-water inlet before any DHW system runs.
+        Solar uses a glazed flat-plate collector array + storage tank; DWHR uses a
+        vertical falling-film heat exchanger on the drain stack. Both apply uniformly
+        to every system type.
+      </p>
+      <Grid cols={2}>
+        <Field
+          label="Preheat configuration"
+          hint="None = baseline. Solar = collector array. DWHR = drainwater heat recovery. Solar+DWHR stacks both with a 0.95 × ΔT combined cap."
+        >
+          <SelectInput<PreheatType>
+            value={inputs.preheat}
+            onChange={(v) => update("preheat", v)}
+            options={[
+              { value: "none", label: "None" },
+              { value: "solar", label: "Solar thermal" },
+              { value: "dwhr", label: "DWHR (drainwater heat recovery)" },
+              { value: "solar+dwhr", label: "Solar + DWHR" },
+            ]}
+          />
+        </Field>
+      </Grid>
+
+      {isSolar && (
+        <Grid cols={2}>
+          <Field
+            label="Solar collector area"
+            suffix="ft²"
+            hint="Total aperture area of the flat-plate collector array. Multifamily systems range 100–800 ft² depending on occupancy."
+          >
+            <NumberInput
+              value={inputs.solarCollectorAreaSqft}
+              onChange={(n) => update("solarCollectorAreaSqft", n)}
+              min={0}
+              max={5000}
+              step={10}
+            />
+          </Field>
+          <Field
+            label="Solar storage tank"
+            suffix="gal"
+            hint="Solar storage tank volume — informational at current modeling fidelity. Range 40–500."
+          >
+            <NumberInput
+              value={inputs.solarStorageGal}
+              onChange={(n) => update("solarStorageGal", n)}
+              min={40}
+              max={2000}
+              step={10}
+            />
+          </Field>
+        </Grid>
+      )}
+
+      {isDwhr && (
+        <Grid cols={2}>
+          <Field
+            label="DWHR effectiveness"
+            hint="Fraction of (drainTemp − inlet) ΔT recovered. CSA B55.2 vertical units rate 0.40–0.60; 0.50 typical."
+          >
+            <NumberInput
+              value={inputs.dwhrEffectiveness}
+              onChange={(n) => update("dwhrEffectiveness", n)}
+              min={0}
+              max={1}
+              step={0.05}
+            />
+          </Field>
+          <Field
+            label="DWHR coverage"
+            hint="Fraction of fixtures plumbed through the DWHR unit. Showers benefit; sinks rarely. Range 0–1."
+          >
+            <NumberInput
+              value={inputs.dwhrCoverage}
+              onChange={(n) => update("dwhrCoverage", n)}
+              min={0}
+              max={1}
+              step={0.05}
+            />
+          </Field>
+        </Grid>
+      )}
+
+      {active && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px 14px",
+            background: "var(--accent-amber-bg, rgba(217, 119, 6, 0.08))",
+            borderLeft: "3px solid var(--accent-amber, #d97706)",
+            borderRadius: 8,
+            fontSize: 12.5,
+            color: "var(--text-primary)",
+          }}
+        >
+          <strong>
+            Effective inlet lifted +{annualLiftF.toFixed(1)}°F annual avg
+          </strong>{" "}
+          <span style={{ color: "var(--text-secondary)" }}>
+            (base {baseInletF}°F → preheated {(baseInletF + annualLiftF).toFixed(1)}°F)
+          </span>
+          {isSolar && (
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, marginTop: 4, color: "var(--text-secondary)" }}>
+              Annual solar fraction: {(annualSF * 100).toFixed(1)}% (cap 85%)
+            </div>
+          )}
+        </div>
       )}
     </Card>
   );
