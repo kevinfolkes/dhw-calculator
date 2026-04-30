@@ -18,6 +18,7 @@ import type {
   InunitGasBufferTankSize,
   InunitResistanceTankSize,
   OccupancyProfile,
+  RecircControlMode,
 } from "@/lib/engineering/constants";
 import type { Refrigerant } from "@/lib/engineering/hpwh";
 import type { SystemTypeKey } from "@/lib/engineering/system-types";
@@ -226,6 +227,23 @@ export interface DhwInputs {
    *  unit. Sinks rarely benefit because their drain temp doesn't develop
    *  enough ΔT before reaching the trap. Default 0.5. */
   dwhrCoverage: number;
+
+  // Recirculation control modifier (Phase E) — scales the recirc-loop
+  // standby loss based on how the recirc pump is controlled. Only affects
+  // systems with `hasRecirc: true` (all central). Default `"continuous"`
+  // preserves baseline behavior for any saved scenarios that pre-date
+  // Phase E.
+  /** Selected recirculation pump control mode: continuous, time-clock,
+   *  demand-controlled, or aquastat. Sources: ASHRAE 90.1-2022 §6.5.5;
+   *  ACEEE multifamily distribution studies. */
+  recircControl: RecircControlMode;
+  /** Pump operating hours per day for `time_clock` mode (range 8–24).
+   *  Default 16 hr/day produces a 0.50 multiplier matching the spec
+   *  baseline. Multiplier formula: `(hoursPerDay / 24) × 0.75` — the
+   *  0.75 factor reflects that scheduled-pump savings beat strict
+   *  pro-rata because typical schedules exclude overnight hours when
+   *  standby losses matter most. Ignored for non-time_clock modes. */
+  timeClockHoursPerDay: number;
 }
 
 export const DEFAULT_INPUTS: DhwInputs = {
@@ -288,4 +306,6 @@ export const DEFAULT_INPUTS: DhwInputs = {
   solarStorageGal: 80,
   dwhrEffectiveness: 0.50,
   dwhrCoverage: 0.5,
+  recircControl: "continuous",
+  timeClockHoursPerDay: 16,
 };

@@ -135,6 +135,23 @@ export function MethodologyTab() {
             ASHRAE 90.1-2022 &sect;6.4.4.1.3 prescribes R-4 minimum for ≥2&Prime; pipe &mdash; a
             warning fires below that.
           </p>
+          <p>
+            <strong>Recirculation control multiplier (Phase E).</strong> The raw loss above
+            assumes the pump runs continuously. Modern controls modulate the pump and scale the
+            loss accordingly:
+          </p>
+          <Formula>
+            loss<sub>BTUH</sub> = loss<sub>BTUH,raw</sub> &times; control_multiplier
+          </Formula>
+          <p>
+            Multipliers: continuous = 1.00, time-clock = (hours/24) &times; 0.75 (default 16 hr/day
+            &rarr; 0.50; the 0.75 factor reflects schedules excluding overnight when standby losses
+            matter most), demand-controlled = 0.30 (flow-triggered; SoCalGas / Taco / Watts pilot
+            data show 30&ndash;60% savings), aquastat = 0.65 (return-temp modulation, recovers
+            roughly a third of the savings of full demand control). Sources: ASHRAE
+            90.1-2022 &sect;6.5.5; ACEEE Multifamily Hot Water Distribution Studies. Default mode
+            is <Code>continuous</Code> so legacy saved scenarios produce identical results.
+          </p>
         </Prose>
       </Card>
 
@@ -599,6 +616,8 @@ export function MethodologyTab() {
               ["pipeInsulationR", "R", "4", "Loop insulation R-value"],
               ["recircReturnTempF", "°F", "125", "Loop return temp"],
               ["ambientPipeF", "°F", "70", "Ambient around loop piping"],
+              ["recircControl", "enum", "continuous", "continuous / time_clock / demand / aquastat (Phase E)"],
+              ["timeClockHoursPerDay", "hr/day", "16", "Pump on-hours for time_clock mode (multiplier = h/24 × 0.75)"],
               ["gasEfficiency", "0–1", "0.95", "Gas equipment thermal efficiency"],
               ["hpwhRefrigerant", "enum", "CO2", "CO2 / HFC"],
               ["hpwhAmbientF", "°F", "null", "HPWH design ambient (null = auto)"],

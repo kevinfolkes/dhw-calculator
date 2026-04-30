@@ -314,13 +314,32 @@ export function CalculationsTab({ inputs, result }: Props) {
             temperature difference ÷ insulation R-value.
           </Prose>
           <Formula>
-            loss_BTUH = loop_length × (return_T − ambient_T) ÷ R × 0.16
+            loss_BTUH_raw = loop_length × (return_T − ambient_T) ÷ R × 0.16
           </Formula>
           <Sub>
             {fmt(inputs.recircLoopLengthFt)} ft × ({inputs.recircReturnTempF} −{" "}
             {inputs.ambientPipeF})°F ÷ R-{inputs.pipeInsulationR} × 0.16 ={" "}
-            <Result>{fmt(result.recircLossBTUH)}</Result> BTU/hr
+            <Result>{fmt(result.recircLossRawBTUH)}</Result> BTU/hr (continuous-pumping baseline)
           </Sub>
+          {result.recircControlMultiplier > 0 && result.recircControl !== "continuous" && (
+            <>
+              <Prose>
+                The selected recirculation control mode (<strong>{result.recircControl}</strong>)
+                modulates how often the loop is actively pumped, which scales the standby loss.
+                Continuous pumping = 1.00; time-clock at {inputs.timeClockHoursPerDay} hr/day,
+                demand-controlled = 0.30, aquastat = 0.65 (ASHRAE 90.1-2022 §6.5.5; ACEEE MF
+                distribution studies).
+              </Prose>
+              <Formula>
+                loss_BTUH = loss_BTUH_raw × control_multiplier
+              </Formula>
+              <Sub>
+                {fmt(result.recircLossRawBTUH)} × {result.recircControlMultiplier.toFixed(2)} ={" "}
+                <Result>{fmt(result.recircLossBTUH)}</Result> BTU/hr
+                {" "}(savings: {fmt(result.recircLossSavingsBTUH)} BTU/hr)
+              </Sub>
+            </>
+          )}
           <Formula>
             loss_kW = <Result>{fmt(result.recircLossKW, 2)}</Result> kW (= BTU/hr ÷ 3412)
           </Formula>

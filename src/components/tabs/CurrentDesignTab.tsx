@@ -391,10 +391,36 @@ export function CurrentDesignTab({ inputs, result }: Props) {
                 result.totalBTUH > 0
                   ? ((result.recircLossBTUH / result.totalBTUH) * 100).toFixed(0)
                   : "0"
-              }% of total`}
+              }% of total${
+                result.recircControl !== "continuous" && result.recircLossSavingsBTUH > 0
+                  ? ` · ${result.recircControl} control`
+                  : ""
+              }`}
               accent="var(--accent-amber)"
             />
           </Grid>
+          {result.recircControl !== "continuous" && result.recircLossSavingsBTUH > 0 && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 14px",
+                background: "var(--accent-amber-bg, rgba(217, 119, 6, 0.08))",
+                borderLeft: "3px solid var(--accent-amber, #d97706)",
+                borderRadius: 8,
+                fontSize: 12.5,
+                color: "var(--text-primary)",
+              }}
+            >
+              <strong>Recirc loss reduced from {fmt(result.recircLossRawBTUH)} to{" "}
+              {fmt(result.recircLossBTUH)} BTU/hr</strong>{" "}
+              <span style={{ color: "var(--text-secondary)" }}>
+                by the <strong>{result.recircControl}</strong>-controlled pump (multiplier{" "}
+                {result.recircControlMultiplier.toFixed(2)}, savings{" "}
+                {fmt(result.recircLossSavingsBTUH)} BTU/hr ≈{" "}
+                {fmt(result.recircLossSavingsBTUH * 8.76 / 100000, 1)} therms/yr equivalent).
+              </span>
+            </div>
+          )}
         </Card>
       )}
 

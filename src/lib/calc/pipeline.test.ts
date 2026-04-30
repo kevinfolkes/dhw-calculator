@@ -283,3 +283,86 @@ describe("preheat modifiers (Phase D)", () => {
     expect(jul).toBeGreaterThan(jan);
   });
 });
+
+describe("recirc control modes (Phase E)", () => {
+  it("demand-controlled produces lower annual energy than continuous (central_gas)", () => {
+    const continuous = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      recircControl: "continuous",
+    });
+    const demand = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      recircControl: "demand",
+    });
+    expect(demand.annualGasTherms).toBeLessThan(continuous.annualGasTherms);
+    expect(demand.recircLossBTUH).toBeLessThan(continuous.recircLossBTUH);
+    expect(demand.recircControlMultiplier).toBeCloseTo(0.30, 4);
+    expect(continuous.recircControlMultiplier).toBeCloseTo(1.0, 4);
+    expect(demand.recircLossSavingsBTUH).toBeGreaterThan(0);
+    expect(continuous.recircLossSavingsBTUH).toBe(0);
+  });
+
+  it("aquastat falls between time_clock and continuous", () => {
+    const continuous = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      recircControl: "continuous",
+    });
+    const timeClock = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      recircControl: "time_clock",
+      timeClockHoursPerDay: 16,
+    });
+    const aquastat = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      recircControl: "aquastat",
+    });
+    // time_clock @16hr → 0.50, aquastat → 0.65, continuous → 1.0
+    expect(timeClock.recircLossBTUH).toBeLessThan(aquastat.recircLossBTUH);
+    expect(aquastat.recircLossBTUH).toBeLessThan(continuous.recircLossBTUH);
+  });
+
+  it("non-recirc system (inunit_hpwh) ignores recircControl on totals", () => {
+    const a = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_hpwh",
+      recircControl: "continuous",
+    });
+    const b = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_hpwh",
+      recircControl: "demand",
+    });
+    // In-unit systems have no recirc loop applied to user-facing fields:
+    // multiplier is sentinel zero, savings zero, regardless of mode.
+    expect(a.recircControlMultiplier).toBe(0);
+    expect(b.recircControlMultiplier).toBe(0);
+    expect(a.recircLossSavingsBTUH).toBe(0);
+    expect(b.recircLossSavingsBTUH).toBe(0);
+    // Annual energy unaffected
+    expect(b.monthly.monthlyAnnualEnergy).toBeCloseTo(a.monthly.monthlyAnnualEnergy, 1);
+  });
+
+  it("time_clock at 24 hr/day produces a 0.75 multiplier (close to but less than continuous)", () => {
+    const r = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_gas",
+      recircControl: "time_clock",
+      timeClockHoursPerDay: 24,
+    });
+    expect(r.recircControlMultiplier).toBeCloseTo(0.75, 4);
+    expect(r.recircLossBTUH).toBeCloseTo(r.recircLossRawBTUH * 0.75, 0);
+  });
+
+  it("default recircControl is 'continuous' so legacy scenarios match pre-Phase-E values", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    expect(r.recircControl).toBe("continuous");
+    expect(r.recircControlMultiplier).toBeCloseTo(1.0, 4);
+    expect(r.recircLossBTUH).toBeCloseTo(r.recircLossRawBTUH, 0);
+    expect(r.recircLossSavingsBTUH).toBe(0);
+  });
+});

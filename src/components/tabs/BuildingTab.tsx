@@ -13,10 +13,13 @@ import {
   DWHR_DRAIN_TEMP_F,
   HPWH_TIER_ADJUSTMENT,
   MONTH_DAYS,
+  RECIRC_CONTROL_LABEL,
   type CentralBoilerType,
   type ClimateZoneKey,
   type HPWHTier,
+  type RecircControlMode,
 } from "@/lib/engineering/constants";
+import { recircControlMultiplier } from "@/lib/engineering/recirc";
 import { deriveInletWaterF, getMonthlyHDDArchetype } from "@/lib/engineering/climate";
 import {
   combinedPreheatLiftF,
@@ -223,22 +226,82 @@ export function BuildingTab({ inputs, update }: Props) {
             <Field label="Pipe ambient" suffix="°F">
               <NumberInput value={inputs.ambientPipeF} onChange={(n) => update("ambientPipeF", n)} min={40} max={100} />
             </Field>
+            <Field
+              label="Recirculation control"
+              hint={(() => {
+                const m = recircControlMultiplier(
+                  inputs.recircControl,
+                  inputs.timeClockHoursPerDay,
+                );
+                const pct = (m * 100).toFixed(0);
+                if (inputs.recircControl === "continuous") {
+                  return `Pump runs 24/7 (multiplier ${m.toFixed(2)} = baseline). ASHRAE 90.1-2022 §6.5.5 typically requires non-continuous control for new construction.`;
+                }
+                if (inputs.recircControl === "demand") {
+                  return `Flow-triggered pump runs only when a draw is sensed. Multiplier ${m.toFixed(2)} (~${pct}% of continuous loss). Source: SoCalGas / Taco / Watts pilot data.`;
+                }
+                if (inputs.recircControl === "aquastat") {
+                  return `Pump modulates by return-loop temperature. Multiplier ${m.toFixed(2)} (~${pct}% of continuous loss).`;
+                }
+                return `Scheduled pump at ${inputs.timeClockHoursPerDay} hr/day. Multiplier (${inputs.timeClockHoursPerDay}/24)×0.75 = ${m.toFixed(2)} (~${pct}% of continuous loss). The 0.75 factor reflects savings beating strict pro-rata because schedules typically exclude overnight.`;
+              })()}
+            >
+              <SelectInput<RecircControlMode>
+                value={inputs.recircControl}
+                onChange={(v) => update("recircControl", v)}
+                options={(Object.keys(RECIRC_CONTROL_LABEL) as RecircControlMode[]).map((k) => ({
+                  value: k,
+                  label: RECIRC_CONTROL_LABEL[k],
+                }))}
+              />
+            </Field>
+            {inputs.recircControl === "time_clock" && (
+              <Field
+                label="Time-clock hours per day"
+                suffix="hr/day"
+                hint="Range 8–24. Default 16 → multiplier 0.50 at the spec baseline."
+              >
+                <NumberInput
+                  value={inputs.timeClockHoursPerDay}
+                  onChange={(n) => update("timeClockHoursPerDay", n)}
+                  min={8}
+                  max={24}
+                  step={1}
+                />
+              </Field>
+            )}
           </Grid>
         </Card>
       )}
 
-      {sys.topology === "central" && (
+      {sys.topology === "central" && (() => {
+        // Heat-source parameters are gated by relevance so users only see
+        // what applies to their selected system. The Equipment tab can still
+        // render the gas / resistance / HPWH comparison using DEFAULT_INPUTS
+        // for any heat source the user didn't tune.
+        const showGasParams =
+          inputs.systemType === "central_gas" ||
+          inputs.systemType === "central_gas_tankless" ||
+          inputs.systemType === "central_indirect" ||
+          inputs.systemType === "central_hybrid" ||
+          inputs.systemType === "central_steam_hx";
+        const showHpwhParams =
+          inputs.systemType === "central_hpwh" ||
+          inputs.systemType === "central_hybrid";
+        const showSwingTank = showHpwhParams; // electric-resistance boost on the HPWH side
+        const numShown = (showGasParams ? 2 : 0) + (showHpwhParams ? 2 : 0) + (showSwingTank ? 1 : 0);
+        if (numShown === 0) return null; // central_resistance has nothing to tune here
+        return (
         <Card>
           <CardHeader>
             <CardTitle>Heat Source Parameters</CardTitle>
           </CardHeader>
           <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12, lineHeight: 1.6 }}>
-            Technology-specific tunables. All three parameter groups are always shown so the
-            Equipment tab can render an apples-to-apples comparison across gas, resistance, and
-            HPWH — regardless of which heat source you actually selected.
+            Tunables for the heat source(s) on this system type. Hidden fields stay
+            at their defaults — switch to a different system type to see its tunables.
           </p>
-          <Grid cols={3}>
-            <Field
+          <Grid cols={Math.min(numShown, 3)}>
+            {showGasParams && <Field
               label="Central boiler type"
               hint={`Drives the default efficiency shown below. ${CENTRAL_BOILER_LABEL.condensing} ~${(CENTRAL_BOILER_DEFAULT_EFFICIENCY.condensing * 100).toFixed(0)}%; ${CENTRAL_BOILER_LABEL.non_condensing} ~${(CENTRAL_BOILER_DEFAULT_EFFICIENCY.non_condensing * 100).toFixed(0)}%. Non-condensing also reduces installed cost by ~${Math.round((1 - CENTRAL_BOILER_COST_FACTOR.non_condensing) * 100)}%.`}
             >
@@ -249,11 +312,7 @@ export function BuildingTab({ inputs, update }: Props) {
                   // boiler type changes — this is what users expect when they
                   // explicitly pick a boiler type. If they want a non-standard
                   // efficiency (e.g. 88% for a near-condensing unit) they can
-                  // override it AFTER selecting the type. The previous
-                  // "preserve manual override unless it matches old default"
-                  // logic was too subtle and produced the surprising state
-                  // where the displayed default contradicts the displayed
-                  // value.
+                  // override it AFTER selecting the type.
                   update("gasEfficiency", CENTRAL_BOILER_DEFAULT_EFFICIENCY[v]);
                   update("centralBoilerType", v);
                 }}
@@ -262,8 +321,8 @@ export function BuildingTab({ inputs, update }: Props) {
                   { value: "non_condensing", label: CENTRAL_BOILER_LABEL.non_condensing },
                 ]}
               />
-            </Field>
-            <Field
+            </Field>}
+            {showGasParams && <Field
               label="Gas efficiency (manual override)"
               suffix="%"
               hint={(() => {
@@ -281,8 +340,8 @@ export function BuildingTab({ inputs, update }: Props) {
                 min={60}
                 max={99}
               />
-            </Field>
-            <Field label="HPWH refrigerant">
+            </Field>}
+            {showHpwhParams && <Field label="HPWH refrigerant">
               <SelectInput
                 value={inputs.hpwhRefrigerant}
                 onChange={(v) => update("hpwhRefrigerant", v)}
@@ -291,8 +350,8 @@ export function BuildingTab({ inputs, update }: Props) {
                   { value: "HFC", label: "HFC (R134a/R513A/R454B)" },
                 ]}
               />
-            </Field>
-            <Field
+            </Field>}
+            {showHpwhParams && <Field
               label="HPWH design ambient"
               suffix="°F"
               hint={
@@ -307,8 +366,8 @@ export function BuildingTab({ inputs, update }: Props) {
                 min={-20}
                 max={110}
               />
-            </Field>
-            <Field
+            </Field>}
+            {showSwingTank && <Field
               label="Swing tank"
               hint="Electric-resistance boost for recirc losses + Legionella disinfection"
             >
@@ -320,10 +379,11 @@ export function BuildingTab({ inputs, update }: Props) {
                   { value: "no", label: "Disabled" },
                 ]}
               />
-            </Field>
+            </Field>}
           </Grid>
         </Card>
-      )}
+        );
+      })()}
 
       <Card>
         <CardHeader>

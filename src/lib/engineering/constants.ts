@@ -408,3 +408,41 @@ export const DWHR_DEFAULT_EFFECTIVENESS = 0.50;
  * splash and air contact in the trap stack).
  */
 export const DWHR_DRAIN_TEMP_F = 95;
+
+// ---------------------------------------------------------------------------
+// Recirculation control modes — Phase E
+//
+// Modulates the recirc-loop pumping schedule, which scales the standby loss
+// the loop produces. Only applies to systems with `hasRecirc: true` (all
+// central systems). Default `"continuous"` preserves baseline behavior.
+//
+// References:
+//   - ASHRAE 90.1-2022 §6.5.5 (recirc control requirements)
+//   - ACEEE Multifamily Hot Water Distribution Studies
+//   - SoCalGas / Taco / Watts demand-control pilot data
+// ---------------------------------------------------------------------------
+export type RecircControlMode = "continuous" | "time_clock" | "demand" | "aquastat";
+
+/**
+ * Multiplier applied to the raw recirc standby loss based on the selected
+ * control mode. Demand-controlled and time-clock pumps drastically reduce
+ * loop run time; aquastat-controlled pumps modulate by return temp and
+ * recover roughly a third of the savings of full demand control.
+ *
+ * For `time_clock` the multiplier is recomputed dynamically from
+ * `timeClockHoursPerDay` (see `applyRecircControl` in `recirc.ts`); the
+ * value here is the spec-default at 16 hr/day.
+ */
+export const RECIRC_CONTROL_LOSS_MULTIPLIER: Record<RecircControlMode, number> = {
+  continuous: 1.0,
+  time_clock: 0.50,
+  demand: 0.30,
+  aquastat: 0.65,
+};
+
+export const RECIRC_CONTROL_LABEL: Record<RecircControlMode, string> = {
+  continuous: "Continuous (always on)",
+  time_clock: "Time-clock (scheduled)",
+  demand: "Demand-controlled (flow-triggered)",
+  aquastat: "Aquastat (return-temp modulated)",
+};

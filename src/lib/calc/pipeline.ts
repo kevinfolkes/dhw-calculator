@@ -38,7 +38,7 @@ import {
   solarMonthlyLiftF,
 } from "@/lib/engineering/preheat";
 import { DWHR_DRAIN_TEMP_F } from "@/lib/engineering/constants";
-import { recircStandbyLoss } from "@/lib/engineering/recirc";
+import { applyRecircControl, recircStandbyLoss } from "@/lib/engineering/recirc";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import { autoSize } from "@/lib/sizing/auto-size";
 import { computeDemand } from "./demand";
@@ -62,6 +62,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     inunitGasTanklessCombiInput, inunitGasCombiBufferTankSize, inunitResistanceTankSize,
     bufferTankEnabled,
     preheat, solarCollectorAreaSqft, dwhrEffectiveness, dwhrCoverage,
+    recircControl, timeClockHoursPerDay,
   } = input;
 
   // Base inlet temp BEFORE any preheat modifier — the climate-derived (or
@@ -161,12 +162,36 @@ export function runCalc(input: DhwInputs): CalcResult {
   }
 
   // ---- RECIRC ------------------------------------------------------------
-  const { lossBTUH: recircLossBTUH, lossKW: recircLossKW } = recircStandbyLoss({
+  // Pure-physics raw loss (continuous pumping). The Phase E control-mode
+  // multiplier is applied immediately so all downstream calcs (totalBTUH,
+  // annual energy, cost) see the adjusted loss; the raw value is preserved
+  // in the result for the Calculations / Current Design walkthrough.
+  //
+  // Non-recirc (in-unit) systems still compute the raw loss from the user's
+  // loop inputs to preserve baseline regression behavior — the recirc field
+  // is a no-op for those topologies because recoveryBTUH dominates totalBTUH
+  // anyway, but we leave the raw number flowing through `recircLossBTUH` so
+  // existing tests that compare against pre-Phase-E values stay deterministic.
+  // The control-mode multiplier is only applied for `hasRecirc` topologies
+  // (the result fields are zeroed for in-unit so tabs can detect the no-loop
+  // case via `recircControlMultiplier > 0`).
+  const sysDef = SYSTEM_TYPES[systemType];
+  const rawRecirc = recircStandbyLoss({
     loopLengthFt: recircLoopLengthFt,
     insulationR: pipeInsulationR,
     returnTempF: recircReturnTempF,
     ambientPipeF,
   });
+  const adjustedRecirc = sysDef.hasRecirc
+    ? applyRecircControl(rawRecirc, recircControl, timeClockHoursPerDay)
+    : { lossBTUH: rawRecirc.lossBTUH, lossKW: rawRecirc.lossKW, multiplier: 1.0 };
+  const recircLossRawBTUH = rawRecirc.lossBTUH;
+  const recircLossBTUH = adjustedRecirc.lossBTUH;
+  const recircLossKW = adjustedRecirc.lossKW;
+  const recircControlMultiplier = sysDef.hasRecirc ? adjustedRecirc.multiplier : 0;
+  const recircLossSavingsBTUH = sysDef.hasRecirc
+    ? Math.max(0, recircLossRawBTUH - recircLossBTUH)
+    : 0;
 
   // ---- STORAGE / RECOVERY (ASHRAE) --------------------------------------
   // Tankless central plants size by peak instantaneous GPM × ΔT, not by FHR
@@ -1006,6 +1031,10 @@ export function runCalc(input: DhwInputs): CalcResult {
     monthlySolarFractions: preheatActive
       ? monthlySolarFractions.map((v) => +v.toFixed(4))
       : new Array(12).fill(0),
+    recircControl,
+    recircControlMultiplier: +recircControlMultiplier.toFixed(4),
+    recircLossSavingsBTUH: +recircLossSavingsBTUH.toFixed(0),
+    recircLossRawBTUH: +recircLossRawBTUH.toFixed(0),
   };
 }
 

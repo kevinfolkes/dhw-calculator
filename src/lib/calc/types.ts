@@ -1,4 +1,10 @@
-import type { ClimateDesign, GasTankSpec, GasTanklessSpec, HPWHTankSpec } from "@/lib/engineering/constants";
+import type {
+  ClimateDesign,
+  GasTankSpec,
+  GasTanklessSpec,
+  HPWHTankSpec,
+  RecircControlMode,
+} from "@/lib/engineering/constants";
 import type { PreheatType } from "./inputs";
 
 export interface ComplianceFlag {
@@ -299,4 +305,22 @@ export interface CalcResult {
   /** Per-month solar fraction (0..0.85), 12 entries indexed Jan..Dec. All
    *  zero when solar is inactive. */
   monthlySolarFractions: number[];
+  /** Echo of the selected recirc control mode (Phase E). For non-recirc
+   *  systems this still echoes the user-entered value but the multiplier
+   *  / savings fields are zeroed because there is no recirc loop. */
+  recircControl: RecircControlMode;
+  /** Effective multiplier applied to the raw recirc standby loss
+   *  (continuous = 1.0, demand = 0.30, etc.). Zero for non-recirc systems
+   *  so downstream tabs can detect "is the loop active?" with `> 0`. */
+  recircControlMultiplier: number;
+  /** BTU/hr of recirc loss avoided vs the continuous-pumping baseline
+   *  (rawLoss − adjustedLoss). Always non-negative; zero for `continuous`
+   *  mode and for systems without a recirc loop. */
+  recircLossSavingsBTUH: number;
+  /** Raw (continuous-pumping) recirc standby loss, BTU/hr. Surfaced for
+   *  the Calculations / Current Design tabs so users can see the
+   *  before / after comparison when a non-continuous mode is active.
+   *  Equals `recircLossBTUH` for `continuous` mode. Zero for non-recirc
+   *  systems. */
+  recircLossRawBTUH: number;
 }
