@@ -84,6 +84,28 @@ export function installedCost(
   if (systemType === "inunit_gas_tankless") {
     return (1500 + (params.inputMBH ?? 0) * 10) * totalUnits;
   }
+  if (systemType === "inunit_combi_gas_tankless") {
+    // Modulating condensing tankless cost (per inunit_gas_tankless) +
+    // buffer tank ($1,000 base + $15/gal) + hydronic adder ($1,800 fan
+    // coil + controls + pump, matches inunit_combi_gas).
+    const tanklessPart = 1500 + (params.inputMBH ?? 0) * 10;
+    const bufferPart = 1000 + (params.storageGal ?? 0) * 15;
+    const combiAdder = 1800;
+    return (tanklessPart + bufferPart + combiAdder) * totalUnits;
+  }
+  if (systemType === "inunit_resistance") {
+    // Per-apartment electric resistance tank — cheaper than HPWH but
+    // pricier than gas tank in capex due to the larger element + control
+    // module.
+    return (800 + (params.tankGal ?? 0) * 12) * totalUnits;
+  }
+  if (systemType === "inunit_combi_resistance") {
+    // Resistance tank cost + $1,800 hydronic adder per unit (mirrors
+    // inunit_combi_gas adder structure: fan coil + controls + pump).
+    const tankPart = 800 + (params.tankGal ?? 0) * 12;
+    const combiAdder = 1800;
+    return (tankPart + combiAdder) * totalUnits;
+  }
   if (systemType === "inunit_hpwh" || systemType === "inunit_combi") {
     const tankGal = params.tankGal ?? 0;
     const base = tankGal <= 66 ? 3200 : tankGal <= 80 ? 3800 : 5500;

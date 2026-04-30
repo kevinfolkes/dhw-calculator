@@ -16,6 +16,8 @@ import {
   GRID_EF,
   HPWH_TANK_FHR,
   HPWH_TIER_ADJUSTMENT,
+  INUNIT_GAS_BUFFER_TANK_SIZES,
+  INUNIT_RESISTANCE_TANK_SPEC,
   MONTHLY_HDD_FRAC,
   MONTH_DAYS,
   MONTHS,
@@ -50,6 +52,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     gasTanklessInput, tanklessDesignRiseF, tanklessSimultaneousFixtures, gasTanklessSetpointF,
     centralGasTanklessInput, indirectHXEffectiveness,
     hybridSplitRatio, steamSourceEfficiency, steamHXEffectiveness, steamSupplyPressurePSIG,
+    inunitGasTanklessCombiInput, inunitGasCombiBufferTankSize, inunitResistanceTankSize,
     bufferTankEnabled,
   } = input;
 
@@ -89,6 +92,9 @@ export function runCalc(input: DhwInputs): CalcResult {
   const isCentralIndirect = systemType === "central_indirect";
   const isCentralHybrid = systemType === "central_hybrid";
   const isCentralSteamHX = systemType === "central_steam_hx";
+  const isInunitCombiGasTankless = systemType === "inunit_combi_gas_tankless";
+  const isInunitResistance = systemType === "inunit_resistance";
+  const isInunitCombiResistance = systemType === "inunit_combi_resistance";
   // Clamp the hybrid split ratio once so every downstream consumer
   // (annual rollups, monthly rows, auto-sizer) uses the same value.
   const hybridSafeRatio = Math.min(0.95, Math.max(0.05, hybridSplitRatio));
@@ -170,8 +176,11 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualHPWHCarbon = annualHPWHKWh_total * ef;
 
   // Unified electric annual: aggregates whichever electric stream applies
-  // for the configured system. Gas-only systems return 0.
-  const annualElectricKWh =
+  // for the configured system. Gas-only systems return 0. The in-unit
+  // resistance variants are computed below (after the in-unit DHW BTU
+  // total is available) and merged into this rollup at the end of the
+  // pipeline; the let-binding lets us override.
+  let annualElectricKWh =
     systemType === "central_resistance"
       ? annualResistanceKWh
       : systemType === "central_hpwh" ||
@@ -429,6 +438,53 @@ export function runCalc(input: DhwInputs): CalcResult {
     ? storageSetpointF + 20 < steamSatTempF
     : true;
 
+  // ---- IN-UNIT COMBI GAS TANKLESS (modulating + buffer tank) -------------
+  // Modern condensing tankless modulates 10:1, so min_fire ≈ 10% of the
+  // selected max input. Buffer tank prevents short-cycling on low partial-
+  // load heating calls: store enough heat for at least 5 minutes of burner
+  // runtime at min_fire above the heating-loop demand, at a 15°F hydronic
+  // buffer swing.
+  //   V_gal = (min_fire_BTUH × 5 min) / (60 min/hr × 8.33 lb/gal × 15°F)
+  //         ≈ min_fire_BTUH / 1500
+  // DHW-side capacity check mirrors `inunit_gas_tankless`: peak GPM at the
+  // user's design rise.
+  const inunitCombiGasTanklessSpec = isInunitCombiGasTankless
+    ? GAS_TANKLESS_WH[inunitGasTanklessCombiInput]
+    : null;
+  const inunitGasCombiMaxFireBTUH = isInunitCombiGasTankless && inunitCombiGasTanklessSpec
+    ? inunitCombiGasTanklessSpec.input_mbh * inunitCombiGasTanklessSpec.uef * 1000
+    : 0;
+  const inunitGasCombiMinFireBTUH = inunitGasCombiMaxFireBTUH * 0.10;
+  const inunitGasCombiBufferRequiredGalRaw = isInunitCombiGasTankless
+    ? (inunitGasCombiMinFireBTUH * 5) / (60 * 8.33 * 15)
+    : 0;
+  const inunitGasCombiBufferAutoSKU = isInunitCombiGasTankless
+    ? INUNIT_GAS_BUFFER_TANK_SIZES.find((s) => s >= inunitGasCombiBufferRequiredGalRaw)
+        ?? INUNIT_GAS_BUFFER_TANK_SIZES[INUNIT_GAS_BUFFER_TANK_SIZES.length - 1]
+    : 0;
+  // User can override the SKU upward via inunitGasCombiBufferTankSize; we
+  // surface the larger of (auto-sized minimum, user-selected SKU).
+  const inunitGasCombiBufferSelectedGal = isInunitCombiGasTankless
+    ? Math.max(inunitGasCombiBufferAutoSKU, inunitGasCombiBufferTankSize)
+    : 0;
+  const inunitGasCombiBufferRequiredGal = isInunitCombiGasTankless
+    ? inunitGasCombiBufferRequiredGalRaw
+    : 0;
+  const inunitGasCombiPeakInstantGPM =
+    isInunitCombiGasTankless && inunitCombiGasTanklessSpec
+      ? (inunitCombiGasTanklessSpec.input_mbh * inunitCombiGasTanklessSpec.uef * 1000) /
+        (500 * Math.max(1, tanklessDesignRiseF))
+      : 0;
+
+  // ---- IN-UNIT RESISTANCE (DHW only and combi variants) ------------------
+  // Resistance tank is 1:1 at the element with modest standby losses
+  // captured by UEF. For the combi variant, the kW input is the hard
+  // ceiling on heating capacity (no compressor/burner reserve).
+  const inunitResistanceSpec =
+    isInunitResistance || isInunitCombiResistance
+      ? INUNIT_RESISTANCE_TANK_SPEC[inunitResistanceTankSize]
+      : null;
+
   // ---- MONTHLY MODEL -----------------------------------------------------
   const currentSysDef = SYSTEM_TYPES[systemType];
   const isInUnitGas_m = currentSysDef.topology === "inunit" && currentSysDef.tech === "gas";
@@ -576,6 +632,32 @@ export function runCalc(input: DhwInputs): CalcResult {
       unit = "therms";
       dhwCost = dhwEnergy * gasRate;
       heatingCost = heatingEnergy * gasRate;
+    } else if (systemType === "inunit_combi_gas_tankless" && inunitCombiGasTanklessSpec) {
+      // Modulating condensing tankless serves both DHW and hydronic fan
+      // coil. Both loads convert through the tankless UEF — the buffer tank
+      // is a control element (prevents short-cycling) and is treated as
+      // efficiency-neutral at the monthly granularity.
+      const monthHeatingBTU = totalHeatingAnnualBTU * monthlyHDDFrac[m];
+      dhwEnergy = monthDHWBTU_inunit_total / (inunitCombiGasTanklessSpec.uef * 100000);
+      heatingEnergy = monthHeatingBTU / (inunitCombiGasTanklessSpec.uef * 100000);
+      unit = "therms";
+      dhwCost = dhwEnergy * gasRate;
+      heatingCost = heatingEnergy * gasRate;
+    } else if (systemType === "inunit_resistance" && inunitResistanceSpec) {
+      // Resistance tank — 1:1 at the element, UEF captures standby losses.
+      dhwEnergy = monthDHWBTU_inunit_total / 3412 / inunitResistanceSpec.uef;
+      unit = "kWh";
+      dhwCost = dhwEnergy * elecRate;
+    } else if (systemType === "inunit_combi_resistance" && inunitResistanceSpec) {
+      // Resistance combi: DHW through tank UEF (with standby losses);
+      // heating through the element directly at 1:1 (the heating loop
+      // bypasses the tank's storage standby term).
+      const monthHeatingBTU = totalHeatingAnnualBTU * monthlyHDDFrac[m];
+      dhwEnergy = monthDHWBTU_inunit_total / 3412 / inunitResistanceSpec.uef;
+      heatingEnergy = monthHeatingBTU / 3412;
+      unit = "kWh";
+      dhwCost = dhwEnergy * elecRate;
+      heatingCost = heatingEnergy * elecRate;
     }
 
     let dhwCarbon = 0;
@@ -627,6 +709,14 @@ export function runCalc(input: DhwInputs): CalcResult {
     } else if (systemType === "inunit_combi_gas") {
       effectiveMonthCOP_dhw = gasTankUEF;
       effectiveMonthCOP_heating = gasTankUEF;
+    } else if (systemType === "inunit_combi_gas_tankless" && inunitCombiGasTanklessSpec) {
+      effectiveMonthCOP_dhw = inunitCombiGasTanklessSpec.uef;
+      effectiveMonthCOP_heating = inunitCombiGasTanklessSpec.uef;
+    } else if (systemType === "inunit_resistance" && inunitResistanceSpec) {
+      effectiveMonthCOP_dhw = inunitResistanceSpec.uef;
+    } else if (systemType === "inunit_combi_resistance" && inunitResistanceSpec) {
+      effectiveMonthCOP_dhw = inunitResistanceSpec.uef;
+      effectiveMonthCOP_heating = 1.0;
     }
 
     // Per-apartment figures (useful for tenant-billing comparisons and for
@@ -676,6 +766,34 @@ export function runCalc(input: DhwInputs): CalcResult {
     heatingFraction: monthlyAnnualEnergy > 0 ? monthlyAnnualHeating / monthlyAnnualEnergy : 0,
   };
 
+  // ---- IN-UNIT RESISTANCE ANNUAL ROLLUPS (DHW + combi) -------------------
+  // These override the unified `annualElectricKWh` so the Compare / Energy
+  // tabs see the correct per-tech annual without bleeding the resistance
+  // figure through to gas-only systems. The monthly model already produces
+  // the same numbers; we mirror them here for tabs that read the rollup
+  // directly (matches the central_resistance / central_hpwh pattern).
+  if (isInunitResistance && inunitResistanceSpec) {
+    annualElectricKWh = inUnitAnnualDHWBTU_total / 3412 / inunitResistanceSpec.uef;
+  } else if (isInunitCombiResistance && inunitResistanceSpec) {
+    const dhwKWh = inUnitAnnualDHWBTU_total / 3412 / inunitResistanceSpec.uef;
+    const heatingKWh = totalHeatingAnnualBTU / 3412;
+    annualElectricKWh = dhwKWh + heatingKWh;
+  }
+
+  // ---- IN-UNIT COMBI RESISTANCE — heating capacity feasibility ----------
+  // Element kW × 3412 BTU/hr/kW is the hard ceiling on per-unit heating
+  // capacity (no compressor or burner reserve). Flag any per-BR heating
+  // load that exceeds the ceiling — the combi cannot meet that load even
+  // with the buffer tank fully primed.
+  const inunitResistanceWorstHeatingKW =
+    isInunitCombiResistance
+      ? Math.max(heatingLoad_0BR, heatingLoad_1BR, heatingLoad_2BR, heatingLoad_3BR) / 3412
+      : 0;
+  const inunitResistanceMeetsHeating =
+    !isInunitCombiResistance ||
+    !inunitResistanceSpec ||
+    inunitResistanceSpec.kw >= inunitResistanceWorstHeatingKW;
+
   // ---- AUTO-SIZING -------------------------------------------------------
   const autoSizeResults = autoSize({
     input,
@@ -699,10 +817,21 @@ export function runCalc(input: DhwInputs): CalcResult {
     totalUnits,
     centralTanklessPeakGPMRequired,
     centralTanklessDesignRiseF,
+    inunitGasCombiBufferRequiredGal,
+    inunitGasCombiBufferSelectedGal,
+    inunitResistanceWorstHeatingKW,
   });
 
   // ---- COMPLIANCE FLAGS --------------------------------------------------
-  const flags = buildComplianceFlags({
+  const extraFlags: ComplianceFlag[] = [];
+  if (isInunitCombiResistance && inunitResistanceSpec && !inunitResistanceMeetsHeating) {
+    extraFlags.push({
+      level: "warn",
+      code: "Manufacturer / Manual J",
+      msg: `${inunitResistanceTankSize}-gal resistance combi element (${inunitResistanceSpec.kw} kW = ${(inunitResistanceSpec.kw * 3412).toFixed(0)} BTU/hr) below worst per-unit heating load (${(inunitResistanceWorstHeatingKW * 3412).toFixed(0)} BTU/hr). Resistance has no compressor reserve — step up element rating, switch to HPWH combi, or split heating onto a dedicated resistance baseboard.`,
+    });
+  }
+  const flags = [...extraFlags, ...buildComplianceFlags({
     input,
     storageSetpointF, deliveryF, pipeInsulationR,
     storageVolGal, hpwhInputKW, gasInputBTUH, gasEfficiency,
@@ -712,7 +841,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     combiTankSize, combiDHWSetpointF, fanCoilSupplyF, hpwhOpLimitF,
     climate, gasTankSize, gasTankType, gasTanklessInput, tanklessDesignRiseF,
     units3BR,
-  });
+  })];
 
   return {
     totalUnits,
@@ -757,6 +886,9 @@ export function runCalc(input: DhwInputs): CalcResult {
     steamCombinedEfficiency,
     steamApproachOK,
     annualElectricKWh,
+    inunitGasCombiBufferRequiredGal,
+    inunitGasCombiBufferSelectedGal,
+    inunitGasCombiPeakInstantGPM,
   };
 }
 

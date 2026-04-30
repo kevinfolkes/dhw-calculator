@@ -319,3 +319,38 @@ export const CENTRAL_HPWH_KW = [15, 20, 30, 40, 60, 80, 120, 160, 200, 300] as c
  * lower supply pressure can violate the approach.
  */
 export const STEAM_SATURATION_TEMP_F_AT_5PSIG = 227;
+
+// ---------------------------------------------------------------------------
+// In-unit gas combi tankless buffer tank SKU set. Used by
+// `inunit_combi_gas_tankless` to prevent burner short-cycling on low
+// partial-load heating calls. Sized off `min_fire_BTUH` (≈10% of max input
+// for a modern condensing tankless) at a 15°F hydronic buffer swing, with a
+// 5-minute minimum runtime target.
+// ---------------------------------------------------------------------------
+export const INUNIT_GAS_BUFFER_TANK_SIZES = [20, 40, 50, 80] as const;
+export type InunitGasBufferTankSize = (typeof INUNIT_GAS_BUFFER_TANK_SIZES)[number];
+
+// ---------------------------------------------------------------------------
+// In-unit electric resistance tank water heater SKUs. Element kW is the
+// hard ceiling on per-unit heating capacity for the combi-resistance variant.
+// FHR / UEF values are AHRI 1300 representative ratings for current-spec
+// electric resistance tanks.
+// ---------------------------------------------------------------------------
+export type InunitResistanceTankSize = 30 | 40 | 50 | 66 | 80;
+
+export interface InunitResistanceTankSpec {
+  /** First-hour rating, GPH */
+  fhr: number;
+  /** Uniform Energy Factor (DOE) */
+  uef: number;
+  /** Element input rating (kW) */
+  kw: number;
+}
+
+export const INUNIT_RESISTANCE_TANK_SPEC: Record<InunitResistanceTankSize, InunitResistanceTankSpec> = {
+  30: { fhr: 25, uef: 0.93, kw: 4.5 },
+  40: { fhr: 32, uef: 0.92, kw: 4.5 },
+  50: { fhr: 41, uef: 0.92, kw: 4.5 },
+  66: { fhr: 53, uef: 0.91, kw: 5.5 },
+  80: { fhr: 64, uef: 0.91, kw: 5.5 },
+};

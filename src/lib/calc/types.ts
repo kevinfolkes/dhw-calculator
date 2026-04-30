@@ -266,4 +266,19 @@ export interface CalcResult {
    *  HPWH and resistance systems it equals the per-tech annual; for
    *  `central_hybrid` it is the HPWH-side share. */
   annualElectricKWh: number;
+  /** Required buffer tank volume (gal) for `inunit_combi_gas_tankless`
+   *  derived from min_fire × 5-min runtime / (8.33 × 15°F swing).
+   *  Surfaces the rule-of-thumb minimum so users can compare against the
+   *  selected SKU. Zero for all other system types. */
+  inunitGasCombiBufferRequiredGal: number;
+  /** Selected buffer tank SKU (gal) for `inunit_combi_gas_tankless` —
+   *  smallest INUNIT_GAS_BUFFER_TANK_SIZES entry ≥ the required value, or
+   *  the user's manual override (whichever is larger). Zero for all other
+   *  system types. */
+  inunitGasCombiBufferSelectedGal: number;
+  /** Peak instantaneous DHW-side GPM capacity for `inunit_combi_gas_tankless`
+   *  at the configured tankless design rise. Computed from the user's
+   *  selected per-unit input × tankless UEF. Zero for all other system
+   *  types. */
+  inunitGasCombiPeakInstantGPM: number;
 }

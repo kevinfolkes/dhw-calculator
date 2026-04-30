@@ -9,6 +9,7 @@ import {
   ENVELOPE_PRESETS,
   GAS_TANKLESS_WH,
   HPWH_TIER_ADJUSTMENT,
+  INUNIT_RESISTANCE_TANK_SPEC,
   WSFU,
 } from "@/lib/engineering/constants";
 import { UNIT_FIXTURE_MIX } from "@/lib/calc/demand";
@@ -45,6 +46,9 @@ export function CalculationsTab({ inputs, result }: Props) {
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
+  const isGasTanklessCombi = inputs.systemType === "inunit_combi_gas_tankless";
+  const isResistance = inputs.systemType === "inunit_resistance";
+  const isResistanceCombi = inputs.systemType === "inunit_combi_resistance";
   const isHPWHInUnit =
     inputs.systemType === "inunit_hpwh" || inputs.systemType === "inunit_combi";
   const hasHeating = sys.hasSpaceHeating;
@@ -601,6 +605,111 @@ export function CalculationsTab({ inputs, result }: Props) {
           </>
         )}
 
+        {isGasTanklessCombi && (
+          <>
+            <Prose>
+              In-unit gas tankless combi sizing checks both the DHW-side capacity (peak GPM × ΔT,
+              like a DHW-only tankless) and the buffer-tank gallons needed to prevent burner
+              short-cycling on low partial-load heating calls. The buffer SKU is auto-sized off
+              min_fire_BTUH (≈10% of max input, typical 10:1 turndown).
+            </Prose>
+            <Formula>
+              capacity_GPM = (input_MBH × UEF × 1000) ÷ (500 × ΔT) ={" "}
+              ({inputs.inunitGasTanklessCombiInput} ×{" "}
+              {GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput].uef.toFixed(2)} × 1000) ÷ (500 ×{" "}
+              {inputs.tanklessDesignRiseF}) ={" "}
+              <Result>{fmt(result.inunitGasCombiPeakInstantGPM, 2)}</Result> GPM
+            </Formula>
+            <Formula>
+              max_fire_BTUH = input_MBH × UEF × 1000 ={" "}
+              {inputs.inunitGasTanklessCombiInput} ×{" "}
+              {GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput].uef.toFixed(2)} × 1000 ={" "}
+              <Result>
+                {fmt(
+                  inputs.inunitGasTanklessCombiInput *
+                    GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput].uef *
+                    1000,
+                )}
+              </Result>{" "}
+              BTU/hr
+            </Formula>
+            <Formula>
+              min_fire_BTUH = max_fire × 0.10 = <Result>
+                {fmt(
+                  inputs.inunitGasTanklessCombiInput *
+                    GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput].uef *
+                    1000 *
+                    0.10,
+                )}
+              </Result>{" "}
+              BTU/hr (10:1 turndown typical)
+            </Formula>
+            <Formula>
+              required_buffer_gal = min_fire × 5 min ÷ (60 × 8.33 × 15°F swing) ={" "}
+              <Result>{fmt(result.inunitGasCombiBufferRequiredGal, 1)}</Result> gal
+            </Formula>
+            <Formula>
+              selected_buffer = max(auto_SKU, user_override) ={" "}
+              <Result>{fmt(result.inunitGasCombiBufferSelectedGal)}</Result> gal
+            </Formula>
+            <Prose>
+              Annual energy treats both DHW and heating loads at the tankless UEF — the buffer tank
+              is a control element, not an efficiency derate.
+            </Prose>
+          </>
+        )}
+        {(isResistance || isResistanceCombi) && (
+          <>
+            <Prose>
+              Electric resistance tank — 1:1 conversion at the element with modest standby losses
+              captured by UEF. {isResistanceCombi ? "Combi variant routes the heating loop through the same element; element kW is the hard ceiling on per-unit heating capacity (no compressor or burner reserve)." : "DHW only."}
+            </Prose>
+            <Formula>
+              tank_FHR = {fmt(INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].fhr)} GPH →{" "}
+              vs per-unit peak {fmt(result.inUnitGas.perUnitPeakGPH)} GPH →{" "}
+              <Result>
+                {INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].fhr >=
+                result.inUnitGas.perUnitPeakGPH
+                  ? "✓ meets"
+                  : "✗ below"}
+              </Result>
+            </Formula>
+            <Formula>
+              UEF = {INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].uef.toFixed(2)} ·
+              element_kW = {INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].kw} kW ·
+              element_BTUH ={" "}
+              <Result>
+                {fmt(INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].kw * 3412)}
+              </Result>{" "}
+              BTU/hr
+            </Formula>
+            {isResistanceCombi && (
+              <Formula>
+                worst_heating_load ={" "}
+                {fmt(
+                  Math.max(
+                    result.combi.heatingLoad_0BR,
+                    result.combi.heatingLoad_1BR,
+                    result.combi.heatingLoad_2BR,
+                    result.combi.heatingLoad_3BR,
+                  ),
+                )}{" "}
+                BTU/hr →{" "}
+                <Result>
+                  {INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].kw * 3412 >=
+                  Math.max(
+                    result.combi.heatingLoad_0BR,
+                    result.combi.heatingLoad_1BR,
+                    result.combi.heatingLoad_2BR,
+                    result.combi.heatingLoad_3BR,
+                  )
+                    ? "✓ element covers"
+                    : "✗ element undersized"}
+                </Result>
+              </Formula>
+            )}
+          </>
+        )}
         {isHPWHInUnit && (
           <>
             <Prose>
@@ -900,6 +1009,20 @@ export function CalculationsTab({ inputs, result }: Props) {
             kWh = annual_BTU ÷ 3412 ÷ COP = <Result>{fmt(result.combi.combiTotalAnnualKWh)}</Result>{" "}
             kWh (seasonalCOP_dhw = {result.combi.seasonalCOP_dhw.toFixed(2)}) · cost{" "}
             <Result>{fmtUSD(result.combi.combiTotalAnnualCost)}</Result>
+          </Formula>
+        )}
+        {isGasTanklessCombi && (
+          <Formula>
+            therms = (annual_DHW_BTU + annual_heating_BTU) ÷ (UEF × 100,000) ={" "}
+            <Result>{fmt(result.monthly.monthlyAnnualEnergy)}</Result> therms · cost{" "}
+            <Result>{fmtUSD(result.monthly.monthlyAnnualCost)}</Result>
+          </Formula>
+        )}
+        {(isResistance || isResistanceCombi) && (
+          <Formula>
+            kWh = annual_DHW_BTU ÷ 3412 ÷ UEF{isResistanceCombi ? " + annual_heating_BTU ÷ 3412" : ""} ={" "}
+            <Result>{fmt(result.monthly.monthlyAnnualEnergy)}</Result> kWh · cost{" "}
+            <Result>{fmtUSD(result.monthly.monthlyAnnualCost)}</Result>
           </Formula>
         )}
         <Prose>

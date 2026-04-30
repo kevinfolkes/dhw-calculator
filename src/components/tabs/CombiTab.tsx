@@ -10,10 +10,14 @@ import {
   GAS_TANKLESS_WH,
   GAS_TANK_WH,
   HPWH_TANK_FHR,
+  INUNIT_GAS_BUFFER_TANK_SIZES,
+  INUNIT_RESISTANCE_TANK_SPEC,
   type EnvelopeKey,
   type GasTankSize,
   type GasTanklessInput,
   type HPWHTankSize,
+  type InunitGasBufferTankSize,
+  type InunitResistanceTankSize,
 } from "@/lib/engineering/constants";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import type { DhwInputs } from "@/lib/calc/inputs";
@@ -30,6 +34,9 @@ export function CombiTab({ inputs, update, result }: Props) {
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
+  const isGasTanklessCombi = inputs.systemType === "inunit_combi_gas_tankless";
+  const isResistance = inputs.systemType === "inunit_resistance";
+  const isResistanceCombi = inputs.systemType === "inunit_combi_resistance";
   const isHPWH = inputs.systemType === "inunit_hpwh" || inputs.systemType === "inunit_combi";
   const hasSpaceHeating = sys.hasSpaceHeating;
 
@@ -240,6 +247,308 @@ export function CombiTab({ inputs, update, result }: Props) {
             <MetricCard label="Per-unit annual" value={fmt(result.inUnitGas.tanklessAnnualTherms_perUnit, 1)} unit="therms" accent="#F59E0B" />
             <MetricCard label="Building annual cost" value={fmtUSD(result.inUnitGas.tanklessBuildingCost)} unit="/yr" accent="#F59E0B" />
             <MetricCard label="Building carbon" value={fmt(result.inUnitGas.tanklessBuildingCarbon)} unit="lb CO₂/yr" accent="#F59E0B" />
+          </Grid>
+        </>
+      )}
+
+      {isGasTanklessCombi && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Gas Tankless Combi — Per Unit (DHW + Hydronic w/ Buffer)</CardTitle>
+            </CardHeader>
+            <Grid cols={3}>
+              <Field label="Tankless input" suffix="MBH">
+                <SelectInput<GasTanklessInput>
+                  value={inputs.inunitGasTanklessCombiInput}
+                  onChange={(v) => update("inunitGasTanklessCombiInput", v)}
+                  options={(Object.keys(GAS_TANKLESS_WH).map(Number) as GasTanklessInput[]).map((s) => ({
+                    value: s,
+                    label: `${s} MBH (${GAS_TANKLESS_WH[s].modulation} mod)`,
+                  }))}
+                />
+              </Field>
+              <Field label="Design ΔT rise" suffix="°F">
+                <NumberInput value={inputs.tanklessDesignRiseF} onChange={(n) => update("tanklessDesignRiseF", n)} min={30} max={100} />
+              </Field>
+              <Field label="DHW setpoint" suffix="°F">
+                <NumberInput value={inputs.gasTanklessSetpointF} onChange={(n) => update("gasTanklessSetpointF", n)} min={100} max={140} />
+              </Field>
+              <Field
+                label="Buffer tank"
+                suffix="gal"
+                hint={`Auto-sized minimum: ${fmt(result.inunitGasCombiBufferRequiredGal, 1)} gal — selected SKU shown.`}
+              >
+                <SelectInput<InunitGasBufferTankSize>
+                  value={inputs.inunitGasCombiBufferTankSize}
+                  onChange={(v) => update("inunitGasCombiBufferTankSize", v)}
+                  options={INUNIT_GAS_BUFFER_TANK_SIZES.map((s) => ({
+                    value: s,
+                    label: `${s} gal`,
+                  }))}
+                />
+              </Field>
+              <Field label="Fan coil supply temp" suffix="°F">
+                <NumberInput value={inputs.fanCoilSupplyF} onChange={(n) => update("fanCoilSupplyF", n)} min={100} max={160} />
+              </Field>
+              <Field label="Indoor design temp" suffix="°F">
+                <NumberInput value={inputs.indoorDesignF} onChange={(n) => update("indoorDesignF", n)} min={65} max={78} />
+              </Field>
+            </Grid>
+          </Card>
+          <Grid cols={3}>
+            <MetricCard
+              label="DHW capacity at rise"
+              value={fmt(result.inunitGasCombiPeakInstantGPM, 1)}
+              unit="GPM"
+              sub={`UEF ${GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput].uef.toFixed(2)}`}
+              accent="#F59E0B"
+            />
+            <MetricCard
+              label="Buffer required"
+              value={fmt(result.inunitGasCombiBufferRequiredGal, 1)}
+              unit="gal"
+              sub={`min_fire × 5 min ÷ 15°F swing`}
+              accent="#F59E0B"
+            />
+            <MetricCard
+              label="Buffer selected"
+              value={fmt(result.inunitGasCombiBufferSelectedGal)}
+              unit="gal"
+              sub={
+                result.inunitGasCombiBufferSelectedGal >= result.inunitGasCombiBufferRequiredGal
+                  ? "✓ above required"
+                  : "✗ below required"
+              }
+              accent={
+                result.inunitGasCombiBufferSelectedGal >= result.inunitGasCombiBufferRequiredGal
+                  ? "var(--accent-emerald)"
+                  : "var(--accent-red)"
+              }
+            />
+          </Grid>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Per-Unit Space Heating (Manual J)</CardTitle>
+            </CardHeader>
+            <Grid cols={2}>
+              <Field label="Envelope preset">
+                <SelectInput<EnvelopeKey>
+                  value={inputs.envelopePreset}
+                  onChange={(v) => update("envelopePreset", v)}
+                  options={(Object.keys(ENVELOPE_PRESETS) as EnvelopeKey[]).map((k) => ({
+                    value: k,
+                    label: ENVELOPE_PRESETS[k].label,
+                  }))}
+                />
+              </Field>
+              <Field label="Ventilation load" suffix="CFM/unit">
+                <NumberInput value={inputs.ventilationLoadPerUnit} onChange={(n) => update("ventilationLoadPerUnit", n)} min={0} />
+              </Field>
+              <Field label="Avg Studio sqft">
+                <NumberInput value={inputs.avgUnitSqft.br0} onChange={(n) => update("avgUnitSqft", { ...inputs.avgUnitSqft, br0: n })} step={25} min={0} />
+              </Field>
+              <Field label="Avg 1-BR sqft">
+                <NumberInput value={inputs.avgUnitSqft.br1} onChange={(n) => update("avgUnitSqft", { ...inputs.avgUnitSqft, br1: n })} step={50} min={0} />
+              </Field>
+              <Field label="Avg 2-BR sqft">
+                <NumberInput value={inputs.avgUnitSqft.br2} onChange={(n) => update("avgUnitSqft", { ...inputs.avgUnitSqft, br2: n })} step={50} min={0} />
+              </Field>
+              <Field label="Avg 3-BR sqft">
+                <NumberInput value={inputs.avgUnitSqft.br3} onChange={(n) => update("avgUnitSqft", { ...inputs.avgUnitSqft, br3: n })} step={50} min={0} />
+              </Field>
+            </Grid>
+          </Card>
+
+          <Grid cols={3}>
+            <MetricCard
+              label="Building annual therms"
+              value={fmt(result.monthly.monthlyAnnualEnergy)}
+              unit="therms"
+              sub={`DHW ${fmt(result.monthly.monthlyAnnualDHW)} + heating ${fmt(result.monthly.monthlyAnnualHeating)}`}
+              accent="#F59E0B"
+            />
+            <MetricCard
+              label="Building annual cost"
+              value={fmtUSD(result.monthly.monthlyAnnualCost)}
+              unit="/yr"
+              accent="#F59E0B"
+            />
+            <MetricCard
+              label="Building carbon"
+              value={fmt(result.monthly.monthlyAnnualCarbon)}
+              unit="lb CO₂/yr"
+              accent="#F59E0B"
+            />
+          </Grid>
+        </>
+      )}
+
+      {(isResistance || isResistanceCombi) && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {isResistanceCombi ? "Electric Resistance Combi — Per Unit" : "Electric Resistance Tank — Per Unit"}
+              </CardTitle>
+            </CardHeader>
+            <Grid cols={3}>
+              <Field label="Tank size" suffix="gal">
+                <SelectInput<InunitResistanceTankSize>
+                  value={inputs.inunitResistanceTankSize}
+                  onChange={(v) => update("inunitResistanceTankSize", v)}
+                  options={(Object.keys(INUNIT_RESISTANCE_TANK_SPEC).map(Number) as InunitResistanceTankSize[]).map((s) => ({
+                    value: s,
+                    label: `${s} gal (${INUNIT_RESISTANCE_TANK_SPEC[s].kw} kW · FHR ${INUNIT_RESISTANCE_TANK_SPEC[s].fhr})`,
+                  }))}
+                />
+              </Field>
+              <Field label="DHW setpoint" suffix="°F">
+                <NumberInput value={inputs.combiDHWSetpointF} onChange={(n) => update("combiDHWSetpointF", n)} min={100} max={160} />
+              </Field>
+              {isResistanceCombi && (
+                <Field label="Fan coil supply temp" suffix="°F">
+                  <NumberInput value={inputs.fanCoilSupplyF} onChange={(n) => update("fanCoilSupplyF", n)} min={100} max={160} />
+                </Field>
+              )}
+            </Grid>
+          </Card>
+
+          {(() => {
+            const spec = INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize];
+            const peakGPH = result.inUnitGas.perUnitPeakGPH;
+            const fhrMet = spec.fhr >= peakGPH;
+            return (
+              <Grid cols={3}>
+                <MetricCard
+                  label="FHR"
+                  value={fmt(spec.fhr)}
+                  unit="GPH"
+                  sub={fhrMet ? "✓ meets per-unit peak" : `✗ below ${fmt(peakGPH)} GPH peak`}
+                  accent={fhrMet ? "var(--accent-emerald)" : "var(--accent-red)"}
+                />
+                <MetricCard
+                  label="Element rating"
+                  value={fmt(spec.kw, 1)}
+                  unit="kW"
+                  sub={`UEF ${spec.uef.toFixed(2)} · ${fmt(spec.kw * 3412)} BTU/hr`}
+                  accent="#7DBBD3"
+                />
+                <MetricCard
+                  label="Per-unit elec demand"
+                  value={fmt(spec.kw, 1)}
+                  unit="kW"
+                  sub="element nameplate"
+                  accent="#7DBBD3"
+                />
+              </Grid>
+            );
+          })()}
+
+          {isResistanceCombi && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Per-Unit Space Heating (Manual J)</CardTitle>
+                </CardHeader>
+                <Grid cols={2}>
+                  <Field label="Envelope preset">
+                    <SelectInput<EnvelopeKey>
+                      value={inputs.envelopePreset}
+                      onChange={(v) => update("envelopePreset", v)}
+                      options={(Object.keys(ENVELOPE_PRESETS) as EnvelopeKey[]).map((k) => ({
+                        value: k,
+                        label: ENVELOPE_PRESETS[k].label,
+                      }))}
+                    />
+                  </Field>
+                  <Field label="Ventilation load" suffix="CFM/unit">
+                    <NumberInput value={inputs.ventilationLoadPerUnit} onChange={(n) => update("ventilationLoadPerUnit", n)} min={0} />
+                  </Field>
+                  <Field label="Indoor design temp" suffix="°F">
+                    <NumberInput value={inputs.indoorDesignF} onChange={(n) => update("indoorDesignF", n)} min={65} max={78} />
+                  </Field>
+                  <Field label="Avg Studio sqft">
+                    <NumberInput value={inputs.avgUnitSqft.br0} onChange={(n) => update("avgUnitSqft", { ...inputs.avgUnitSqft, br0: n })} step={25} min={0} />
+                  </Field>
+                  <Field label="Avg 1-BR sqft">
+                    <NumberInput value={inputs.avgUnitSqft.br1} onChange={(n) => update("avgUnitSqft", { ...inputs.avgUnitSqft, br1: n })} step={50} min={0} />
+                  </Field>
+                  <Field label="Avg 2-BR sqft">
+                    <NumberInput value={inputs.avgUnitSqft.br2} onChange={(n) => update("avgUnitSqft", { ...inputs.avgUnitSqft, br2: n })} step={50} min={0} />
+                  </Field>
+                  <Field label="Avg 3-BR sqft">
+                    <NumberInput value={inputs.avgUnitSqft.br3} onChange={(n) => update("avgUnitSqft", { ...inputs.avgUnitSqft, br3: n })} step={50} min={0} />
+                  </Field>
+                </Grid>
+              </Card>
+
+              {(() => {
+                const elementBTUH = INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].kw * 3412;
+                const meets3BR = elementBTUH >= result.combi.heatingLoad_3BR;
+                const meets2BR = elementBTUH >= result.combi.heatingLoad_2BR;
+                const meets1BR = elementBTUH >= result.combi.heatingLoad_1BR;
+                const meets0BR = elementBTUH >= result.combi.heatingLoad_0BR;
+                const showStudio = inputs.unitsStudio > 0;
+                return (
+                  <Grid cols={showStudio ? 4 : 3}>
+                    {showStudio && (
+                      <MetricCard
+                        label="Studio heating load"
+                        value={fmt(result.combi.heatingLoad_0BR)}
+                        unit="BTU/hr"
+                        sub={meets0BR ? `✓ element ${fmt(elementBTUH)} BTU/hr` : `✗ short by ${fmt(result.combi.heatingLoad_0BR - elementBTUH)} BTU/hr`}
+                        accent={meets0BR ? "var(--accent-emerald)" : "var(--accent-red)"}
+                      />
+                    )}
+                    <MetricCard
+                      label="1-BR heating load"
+                      value={fmt(result.combi.heatingLoad_1BR)}
+                      unit="BTU/hr"
+                      sub={meets1BR ? `✓ element ${fmt(elementBTUH)} BTU/hr` : `✗ short by ${fmt(result.combi.heatingLoad_1BR - elementBTUH)} BTU/hr`}
+                      accent={meets1BR ? "var(--accent-emerald)" : "var(--accent-red)"}
+                    />
+                    <MetricCard
+                      label="2-BR heating load"
+                      value={fmt(result.combi.heatingLoad_2BR)}
+                      unit="BTU/hr"
+                      sub={meets2BR ? `✓ element ${fmt(elementBTUH)} BTU/hr` : `✗ short by ${fmt(result.combi.heatingLoad_2BR - elementBTUH)} BTU/hr`}
+                      accent={meets2BR ? "var(--accent-emerald)" : "var(--accent-red)"}
+                    />
+                    <MetricCard
+                      label="3-BR heating load"
+                      value={fmt(result.combi.heatingLoad_3BR)}
+                      unit="BTU/hr"
+                      sub={meets3BR ? `✓ element ${fmt(elementBTUH)} BTU/hr` : `✗ short by ${fmt(result.combi.heatingLoad_3BR - elementBTUH)} BTU/hr`}
+                      accent={meets3BR ? "var(--accent-emerald)" : "var(--accent-red)"}
+                    />
+                  </Grid>
+                );
+              })()}
+            </>
+          )}
+
+          <Grid cols={3}>
+            <MetricCard
+              label="Building annual kWh"
+              value={fmt(result.monthly.monthlyAnnualEnergy)}
+              unit="kWh"
+              sub={`DHW ${fmt(result.monthly.monthlyAnnualDHW)}${isResistanceCombi ? ` + heating ${fmt(result.monthly.monthlyAnnualHeating)}` : ""}`}
+              accent="#7DBBD3"
+            />
+            <MetricCard
+              label="Building annual cost"
+              value={fmtUSD(result.monthly.monthlyAnnualCost)}
+              unit="/yr"
+              accent="#7DBBD3"
+            />
+            <MetricCard
+              label="Building carbon"
+              value={fmt(result.monthly.monthlyAnnualCarbon)}
+              unit="lb CO₂/yr"
+              accent="#7DBBD3"
+            />
           </Grid>
         </>
       )}

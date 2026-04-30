@@ -40,6 +40,7 @@ describe("runCalc (integration)", () => {
       "central_resistance", "central_hpwh",
       "inunit_gas_tank", "inunit_gas_tankless", "inunit_hpwh",
       "inunit_combi", "inunit_combi_gas",
+      "inunit_combi_gas_tankless", "inunit_resistance", "inunit_combi_resistance",
     ] as const;
     for (const sys of systems) {
       const r = runCalc({ ...DEFAULT_INPUTS, systemType: sys });
@@ -120,12 +121,58 @@ describe("central_steam_hx", () => {
   });
 });
 
+describe("inunit_combi_gas_tankless", () => {
+  it("computes peak GPM, buffer requirements, and reports therms", () => {
+    const result = runCalc({ ...DEFAULT_INPUTS, systemType: "inunit_combi_gas_tankless" });
+    expect(result.totalBTUH).toBeGreaterThan(0);
+    expect(result.inunitGasCombiPeakInstantGPM).toBeGreaterThan(0);
+    expect(result.inunitGasCombiBufferRequiredGal).toBeGreaterThan(0);
+    expect(result.inunitGasCombiBufferSelectedGal).toBeGreaterThanOrEqual(
+      result.inunitGasCombiBufferRequiredGal,
+    );
+    expect(result.autoSize?.recommended).toBeTruthy();
+    expect(result.monthly.monthlyUnit).toBe("therms");
+    expect(result.monthly.monthlyAnnualHeating).toBeGreaterThan(0);
+    expect(result.monthly.monthlyAnnualDHW).toBeGreaterThan(0);
+  });
+
+  it("does not leak buffer fields onto unrelated systems", () => {
+    const gas = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    expect(gas.inunitGasCombiBufferRequiredGal).toBe(0);
+    expect(gas.inunitGasCombiBufferSelectedGal).toBe(0);
+    expect(gas.inunitGasCombiPeakInstantGPM).toBe(0);
+  });
+});
+
+describe("inunit_resistance", () => {
+  it("produces kWh (not therms) and non-zero annual electric", () => {
+    const result = runCalc({ ...DEFAULT_INPUTS, systemType: "inunit_resistance" });
+    expect(result.totalBTUH).toBeGreaterThan(0);
+    expect(result.monthly.monthlyUnit).toBe("kWh");
+    expect(result.annualElectricKWh).toBeGreaterThan(0);
+    expect(result.monthly.monthlyAnnualHeating).toBe(0);
+    expect(result.autoSize?.recommended).toBeTruthy();
+  });
+});
+
+describe("inunit_combi_resistance", () => {
+  it("produces both DHW and heating kWh, both billed at elec rate", () => {
+    const result = runCalc({ ...DEFAULT_INPUTS, systemType: "inunit_combi_resistance" });
+    expect(result.totalBTUH).toBeGreaterThan(0);
+    expect(result.monthly.monthlyUnit).toBe("kWh");
+    expect(result.monthly.monthlyAnnualDHW).toBeGreaterThan(0);
+    expect(result.monthly.monthlyAnnualHeating).toBeGreaterThan(0);
+    expect(result.annualElectricKWh).toBeGreaterThan(result.annualResistanceKWh * 0); // sanity
+    expect(result.autoSize?.recommended).toBeTruthy();
+  });
+});
+
 describe("central boiler type", () => {
   it("non_condensing central_gas costs less than condensing at the same recommendation", () => {
     const cond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", centralBoilerType: "condensing", gasEfficiency: 0.95 });
     const nonCond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", centralBoilerType: "non_condensing", gasEfficiency: 0.78 });
-    const condCap = cond.autoSize?.recommended.capCost ?? 0;
-    const nonCondCap = nonCond.autoSize?.recommended.capCost ?? 0;
+    const condCap = cond.autoSize?.recommended?.capCost ?? 0;
+    const nonCondCap = nonCond.autoSize?.recommended?.capCost ?? 0;
     expect(nonCondCap).toBeLessThan(condCap); // ~28% discount
     expect(nonCondCap).toBeGreaterThan(0);
   });
@@ -139,8 +186,8 @@ describe("central boiler type", () => {
   it("central_indirect non_condensing also gets the cost discount", () => {
     const cond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect", centralBoilerType: "condensing" });
     const nonCond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect", centralBoilerType: "non_condensing" });
-    const condCap = cond.autoSize?.recommended.capCost ?? 0;
-    const nonCondCap = nonCond.autoSize?.recommended.capCost ?? 0;
+    const condCap = cond.autoSize?.recommended?.capCost ?? 0;
+    const nonCondCap = nonCond.autoSize?.recommended?.capCost ?? 0;
     expect(nonCondCap).toBeLessThan(condCap);
   });
 });

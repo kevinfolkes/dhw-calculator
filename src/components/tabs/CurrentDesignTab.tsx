@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Grid } from "@/components/ui/Grid";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { fmt, fmtUSD } from "@/lib/utils";
+import { GAS_TANKLESS_WH, INUNIT_RESISTANCE_TANK_SPEC } from "@/lib/engineering/constants";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import type { DhwInputs } from "@/lib/calc/inputs";
 import type { CalcResult } from "@/lib/calc/types";
@@ -218,6 +219,9 @@ export function CurrentDesignTab({ inputs, result }: Props) {
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
+  const isGasTanklessCombi = inputs.systemType === "inunit_combi_gas_tankless";
+  const isResistance = inputs.systemType === "inunit_resistance";
+  const isResistanceCombi = inputs.systemType === "inunit_combi_resistance";
   const isHPWHInUnit =
     inputs.systemType === "inunit_hpwh" || inputs.systemType === "inunit_combi";
 
@@ -823,6 +827,177 @@ export function CurrentDesignTab({ inputs, result }: Props) {
           </>
         )}
 
+        {isGasTanklessCombi && (
+          <Grid cols={3}>
+            <MetricCard
+              label={`${inputs.inunitGasTanklessCombiInput} MBH tankless combi`}
+              value={fmt(result.inunitGasCombiPeakInstantGPM, 1)}
+              unit="GPM @ rise"
+              sub={`UEF ${GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput].uef.toFixed(2)} · ${inputs.tanklessDesignRiseF}°F rise`}
+              accent={A_GAS}
+            />
+            <MetricCard
+              label="Buffer tank (heating loop)"
+              value={fmt(result.inunitGasCombiBufferSelectedGal)}
+              unit="gal"
+              sub={`required ${fmt(result.inunitGasCombiBufferRequiredGal, 1)} gal · 5-min min runtime, 15°F swing`}
+              accent={A_GAS}
+            />
+            <MetricCard
+              label="Spec reality check"
+              value=""
+              sub={
+                <StatusBadge
+                  ok={result.inunitGasCombiBufferSelectedGal >= result.inunitGasCombiBufferRequiredGal}
+                  text={
+                    result.inunitGasCombiBufferSelectedGal >= result.inunitGasCombiBufferRequiredGal
+                      ? "buffer ≥ required"
+                      : "buffer below required"
+                  }
+                />
+              }
+              accent={
+                result.inunitGasCombiBufferSelectedGal >= result.inunitGasCombiBufferRequiredGal
+                  ? A_OK
+                  : A_BAD
+              }
+            />
+          </Grid>
+        )}
+
+        {isGasTanklessCombi && (() => {
+          const tanklessSpec = GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput];
+          const tanklessOutBTUH = tanklessSpec.input_mbh * tanklessSpec.uef * 1000;
+          return (
+            <>
+              <div
+                style={{
+                  marginTop: 14,
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  fontWeight: 600,
+                }}
+              >
+                Heating coverage per unit · tankless output {fmt(tanklessOutBTUH)} BTU/hr
+              </div>
+              <Grid cols={inputs.unitsStudio > 0 ? 4 : 3}>
+                {((["Studio", "1BR", "2BR", "3BR"] as const)
+                  .filter((t) => t !== "Studio" || inputs.unitsStudio > 0)
+                ).map((t) => {
+                  const load =
+                    t === "Studio"
+                      ? result.combi.heatingLoad_0BR
+                      : t === "1BR"
+                      ? result.combi.heatingLoad_1BR
+                      : t === "2BR"
+                      ? result.combi.heatingLoad_2BR
+                      : result.combi.heatingLoad_3BR;
+                  const ok = tanklessOutBTUH >= load;
+                  return (
+                    <MetricCard
+                      key={t}
+                      label={`${t} design load`}
+                      value={fmt(load)}
+                      unit="BTU/hr"
+                      sub={
+                        <StatusBadge
+                          ok={ok}
+                          text={ok ? "tankless covers" : `short ${fmt(load - tanklessOutBTUH)} BTU/hr`}
+                        />
+                      }
+                      accent={ok ? A_OK : A_BAD}
+                    />
+                  );
+                })}
+              </Grid>
+            </>
+          );
+        })()}
+
+        {(isResistance || isResistanceCombi) && (() => {
+          const spec = INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize];
+          const peakGPH = result.inUnitGas.perUnitPeakGPH;
+          const fhrMet = spec.fhr >= peakGPH;
+          return (
+            <Grid cols={3}>
+              <MetricCard
+                label={`${inputs.inunitResistanceTankSize}-gal resistance tank`}
+                value={fmt(spec.fhr)}
+                unit="GPH FHR"
+                sub={
+                  <StatusBadge
+                    ok={fhrMet}
+                    text={fhrMet ? "meets per-unit peak" : `below ${fmt(peakGPH)} GPH`}
+                  />
+                }
+                accent={A_RESIST}
+              />
+              <MetricCard
+                label="Element rating"
+                value={fmt(spec.kw, 1)}
+                unit="kW"
+                sub={`UEF ${spec.uef.toFixed(2)} · ${fmt(spec.kw * 3412)} BTU/hr`}
+                accent={A_RESIST}
+              />
+              <MetricCard
+                label="Per-unit elec demand"
+                value={fmt(spec.kw, 1)}
+                unit="kW"
+                sub="element nameplate"
+                accent={A_RESIST}
+              />
+            </Grid>
+          );
+        })()}
+
+        {isResistanceCombi && (() => {
+          const elementBTUH = INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].kw * 3412;
+          return (
+            <>
+              <div
+                style={{
+                  marginTop: 14,
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  fontWeight: 600,
+                }}
+              >
+                Heating coverage per unit · element output {fmt(elementBTUH)} BTU/hr (1:1, no compressor reserve)
+              </div>
+              <Grid cols={inputs.unitsStudio > 0 ? 4 : 3}>
+                {((["Studio", "1BR", "2BR", "3BR"] as const)
+                  .filter((t) => t !== "Studio" || inputs.unitsStudio > 0)
+                ).map((t) => {
+                  const load =
+                    t === "Studio"
+                      ? result.combi.heatingLoad_0BR
+                      : t === "1BR"
+                      ? result.combi.heatingLoad_1BR
+                      : t === "2BR"
+                      ? result.combi.heatingLoad_2BR
+                      : result.combi.heatingLoad_3BR;
+                  const ok = elementBTUH >= load;
+                  return (
+                    <MetricCard
+                      key={t}
+                      label={`${t} design load`}
+                      value={fmt(load)}
+                      unit="BTU/hr"
+                      sub={
+                        <StatusBadge
+                          ok={ok}
+                          text={ok ? "element covers" : `short ${fmt(load - elementBTUH)} BTU/hr`}
+                        />
+                      }
+                      accent={ok ? A_OK : A_BAD}
+                    />
+                  );
+                })}
+              </Grid>
+            </>
+          );
+        })()}
+
         {(isGasTank || isGasCombi || isHPWHInUnit) && (() => {
           const tankFHR_gph = isGasTank || isGasCombi ? result.inUnitGas.gasTankFHR : result.combi.fhr;
           const tankGallons = isGasTank || isGasCombi ? inputs.gasTankSize : inputs.combiTankSize;
@@ -1089,6 +1264,52 @@ export function CurrentDesignTab({ inputs, result }: Props) {
                 label="Seasonal COP (DHW)"
                 value={result.combi.seasonalCOP_dhw.toFixed(2)}
                 accent={A_HPWH}
+              />
+            </>
+          )}
+          {isGasTanklessCombi && (
+            <>
+              <MetricCard
+                label="Building annual (DHW + heat)"
+                value={fmtUSD(result.monthly.monthlyAnnualCost)}
+                unit="/yr"
+                sub={`${fmt(result.monthly.monthlyAnnualEnergy)} therms · DHW ${fmt(result.monthly.monthlyAnnualDHW)} + heat ${fmt(result.monthly.monthlyAnnualHeating)}`}
+                accent={A_GAS}
+              />
+              <MetricCard
+                label="Annual carbon"
+                value={fmt(result.monthly.monthlyAnnualCarbon)}
+                unit="lb CO₂"
+                accent={A_GAS}
+              />
+              <MetricCard
+                label="Tankless UEF"
+                value={GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput].uef.toFixed(2)}
+                sub={`${GAS_TANKLESS_WH[inputs.inunitGasTanklessCombiInput].modulation} mod ratio`}
+                accent={A_GAS}
+              />
+            </>
+          )}
+          {(isResistance || isResistanceCombi) && (
+            <>
+              <MetricCard
+                label={isResistanceCombi ? "Building annual (DHW + heat)" : "Building annual"}
+                value={fmtUSD(result.monthly.monthlyAnnualCost)}
+                unit="/yr"
+                sub={`${fmt(result.monthly.monthlyAnnualEnergy)} kWh${isResistanceCombi ? ` · DHW ${fmt(result.monthly.monthlyAnnualDHW)} + heat ${fmt(result.monthly.monthlyAnnualHeating)}` : ""}`}
+                accent={A_RESIST}
+              />
+              <MetricCard
+                label="Annual carbon"
+                value={fmt(result.monthly.monthlyAnnualCarbon)}
+                unit="lb CO₂"
+                accent={A_RESIST}
+              />
+              <MetricCard
+                label="Tank UEF"
+                value={INUNIT_RESISTANCE_TANK_SPEC[inputs.inunitResistanceTankSize].uef.toFixed(2)}
+                sub="1:1 element + standby loss"
+                accent={A_RESIST}
               />
             </>
           )}

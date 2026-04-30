@@ -622,6 +622,16 @@ const SIZED_VARIABLES: Record<SystemTypeKey, SizedVariable[]> = {
     { label: "Per-unit tank (gal)", detail: "40 / 50 / 75 / 100 gal serving DHW + hydronic fan coil.", constraint: "FHR ≥ peak_hour_per_apt AND input_MBH × UEF × 1000 ≥ worst_heating" },
     { label: "Efficiency tier", detail: "Condensing vs non-condensing." },
   ],
+  inunit_combi_gas_tankless: [
+    { label: "Per-unit input (MBH)", detail: "150 / 180 / 199 MBH modulating condensing tankless. DHW-side capacity check is identical to in-unit gas tankless.", constraint: "capacity_at_rise ≥ peak_GPM (top-N fixtures × 85%)" },
+    { label: "Buffer tank (gal)", detail: "20 / 40 / 50 / 80 gal buffer on the heating loop. Prevents burner short-cycling on low partial-load heating calls.", constraint: "V ≥ min_fire_BTUH × 5 min ÷ (60 × 8.33 × 15°F swing)" },
+  ],
+  inunit_resistance: [
+    { label: "Per-unit tank (gal)", detail: "30 / 40 / 50 / 66 / 80 gal electric resistance tank.", constraint: "FHR ≥ peak_hour_per_apt" },
+  ],
+  inunit_combi_resistance: [
+    { label: "Per-unit tank (gal)", detail: "30 / 40 / 50 / 66 / 80 gal serving DHW + hydronic fan coil.", constraint: "FHR ≥ peak_hour_per_apt AND element_kW × 3412 ≥ worst_heating" },
+  ],
 };
 
 const HUMAN_KEYS: Record<string, string> = {
@@ -660,6 +670,9 @@ function recommendedMarginLabel(st: SystemTypeKey): string {
     case "inunit_hpwh": return "+15% FHR";
     case "inunit_combi": return "+15% FHR, ≤3kW backup";
     case "inunit_combi_gas": return "+15% FHR + heating";
+    case "inunit_combi_gas_tankless": return "+15% capacity + buffer";
+    case "inunit_resistance": return "+15% FHR";
+    case "inunit_combi_resistance": return "+15% FHR + element kW";
   }
 }
 
@@ -677,5 +690,8 @@ function recommendedRuleLabel(st: SystemTypeKey): string {
     case "inunit_hpwh": return "Smallest tank whose FHR ≥ 1.15 × peak-hour per unit";
     case "inunit_combi": return "Smallest tank whose FHR ≥ 1.15 × peak-hour AND resistance backup ≤ 3 kW";
     case "inunit_combi_gas": return "Smallest tank whose FHR ≥ 1.15 × peak-hour AND output covers 1.15 × worst heating load";
+    case "inunit_combi_gas_tankless": return "Smallest input whose capacity at design rise ≥ 1.15 × peak GPM, paired with the auto-sized buffer tank";
+    case "inunit_resistance": return "Smallest tank whose FHR ≥ 1.15 × peak-hour per unit";
+    case "inunit_combi_resistance": return "Smallest tank whose FHR ≥ 1.15 × peak-hour AND element kW ≥ worst heating load";
   }
 }

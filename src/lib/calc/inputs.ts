@@ -15,6 +15,8 @@ import type {
   GridSubregion,
   HPWHTankSize,
   HPWHTier,
+  InunitGasBufferTankSize,
+  InunitResistanceTankSize,
   OccupancyProfile,
 } from "@/lib/engineering/constants";
 import type { Refrigerant } from "@/lib/engineering/hpwh";
@@ -164,6 +166,27 @@ export interface DhwInputs {
    *  capacity. Informational only — used to flag infeasible setpoints. */
   steamSupplyPressurePSIG: number;
 
+  // In-unit combi gas tankless (modulating tankless + buffer tank)
+  /** Selected per-unit input rating (MBH) for the modulating condensing
+   *  tankless module on a `inunit_combi_gas_tankless` system. Reuses the
+   *  same SKU ladder as the DHW-only `inunit_gas_tankless` (150 / 180 / 199
+   *  MBH). The DHW-side capacity check is identical; the combi variant
+   *  additionally pairs the unit with a buffer tank on the heating loop. */
+  inunitGasTanklessCombiInput: GasTanklessInput;
+  /** Buffer tank gallon size for the heating loop on
+   *  `inunit_combi_gas_tankless`. Prevents burner short-cycling on low
+   *  partial-load heating calls. Auto-sized from min_fire × 5-min runtime
+   *  / (8.33 × 15°F swing); the user can override to step up the SKU. */
+  inunitGasCombiBufferTankSize: InunitGasBufferTankSize;
+
+  // In-unit electric resistance (DHW-only and combi variants)
+  /** Selected per-unit electric resistance tank size (gal). Used by both
+   *  `inunit_resistance` (DHW-only) and `inunit_combi_resistance` (DHW +
+   *  hydronic). For the combi variant the tank's kW input is the hard
+   *  ceiling on per-unit heating capacity — there's no compressor or
+   *  burner reserve beyond the element rating. */
+  inunitResistanceTankSize: InunitResistanceTankSize;
+
   // Fixture flow rates (GPM), used by tankless peak-demand calc
   fixtureGPM: FixtureGPM;
 }
@@ -219,5 +242,8 @@ export const DEFAULT_INPUTS: DhwInputs = {
   steamSourceEfficiency: 0.75,
   steamHXEffectiveness: 0.90,
   steamSupplyPressurePSIG: 5,
+  inunitGasTanklessCombiInput: 199,
+  inunitGasCombiBufferTankSize: 40,
+  inunitResistanceTankSize: 50,
   fixtureGPM: { ...DEFAULT_FIXTURE_GPM },
 };

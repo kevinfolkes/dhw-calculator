@@ -19,7 +19,10 @@ export type SystemTypeKey =
   | "inunit_gas_tankless"
   | "inunit_hpwh"
   | "inunit_combi"
-  | "inunit_combi_gas";
+  | "inunit_combi_gas"
+  | "inunit_combi_gas_tankless"
+  | "inunit_resistance"
+  | "inunit_combi_resistance";
 
 export interface SystemTypeDef {
   label: string;
@@ -183,6 +186,45 @@ export const SYSTEM_TYPES: Record<SystemTypeKey, SystemTypeDef> = {
       "Per-apartment gas storage water heater serves both DHW and space heating via a hydronic fan coil. Common in low/mid-rise multifamily where a single appliance covers both loads at low capex. Condensing or atmospheric tank options.",
     archetypes: "HTP Phoenix Sanctuary, AO Smith Cyclone Mxi, Rinnai i-series + buffer, Navien NCB combi (boiler variant)",
     color: "#e5b77a",
+  },
+  inunit_combi_gas_tankless: {
+    label: "In-Unit Combi Gas Tankless (DHW + Hydronic w/ Buffer)",
+    short: "In-Unit Combi Gas Tankless",
+    topology: "inunit",
+    tech: "gas",
+    subtech: "tankless",
+    hasRecirc: false,
+    hasSpaceHeating: true,
+    description:
+      "Per-apartment modulating condensing tankless gas unit serves both DHW and a hydronic fan coil heating loop. A small buffer tank on the heating side absorbs short heating draws to prevent burner short-cycling on low partial-load calls. Common in low/mid-rise multifamily where a single high-turndown appliance covers both loads.",
+    archetypes: "Navien NCB combi, Rinnai i-Series + buffer, Bosch Greentherm combi, Lochinvar Knight Wall-Mount + buffer",
+    color: "#d97a85",
+  },
+  inunit_resistance: {
+    label: "In-Unit Electric Resistance Tank (DHW only)",
+    short: "In-Unit Resistance",
+    topology: "inunit",
+    tech: "resistance",
+    subtech: "tank",
+    hasRecirc: false,
+    hasSpaceHeating: false,
+    description:
+      "Per-apartment electric resistance tank water heater. 1:1 efficiency at the element (modest standby losses). Uneconomic at scale due to electric rates but present in small all-electric multifamily where HPWH is infeasible (no closet space for HPWH heat-source ducting, no condensate drain) or where utility rates favor resistance.",
+    archetypes: "Rheem Performance, AO Smith Signature, Bradford White RE, State Select Electric",
+    color: "#bdbde0",
+  },
+  inunit_combi_resistance: {
+    label: "In-Unit Combi Resistance (DHW + Hydronic Fan Coil)",
+    short: "In-Unit Combi Resistance",
+    topology: "inunit",
+    tech: "resistance",
+    subtech: "tank",
+    hasRecirc: false,
+    hasSpaceHeating: true,
+    description:
+      "Per-apartment electric resistance tank serves both DHW and a hydronic fan coil heating loop. Niche option in small all-electric multifamily where HPWH is infeasible. The tank's kW input is the hard ceiling on heating capacity (no compressor reserve), so worst-case unit heating loads must fit under the element rating.",
+    archetypes: "Rheem Marathon Combi, AO Smith Voltex Resistance, custom resistance + hydronic kit",
+    color: "#a8a8d5",
   },
 };
 

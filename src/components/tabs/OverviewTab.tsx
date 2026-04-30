@@ -43,6 +43,12 @@ const BEST_FOR: Record<SystemTypeKey, string> = {
     "One HPWH per apartment serves DHW + hydronic fan coil. Simplest all-electric retrofit.",
   inunit_combi_gas:
     "Gas tank serves DHW + hydronic fan coil (Aquatherm-style). Common in low/mid-rise where one appliance covers both loads at low capex.",
+  inunit_combi_gas_tankless:
+    "Modulating condensing tankless gas + buffer tank for both DHW and hydronic heating per unit. Saves closet space versus a tank combi.",
+  inunit_resistance:
+    "Per-apartment electric resistance tank. Use only where HPWH is infeasible — uneconomic at scale due to electric rates.",
+  inunit_combi_resistance:
+    "Per-apartment electric resistance tank serving DHW + hydronic. Niche all-electric option where HPWH won't fit.",
 };
 
 export function OverviewTab({ inputs, update }: Props) {
