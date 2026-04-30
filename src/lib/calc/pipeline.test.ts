@@ -119,3 +119,28 @@ describe("central_steam_hx", () => {
     expect(result.autoSize?.recommended).toBeTruthy();
   });
 });
+
+describe("central boiler type", () => {
+  it("non_condensing central_gas costs less than condensing at the same recommendation", () => {
+    const cond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", centralBoilerType: "condensing", gasEfficiency: 0.95 });
+    const nonCond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", centralBoilerType: "non_condensing", gasEfficiency: 0.78 });
+    const condCap = cond.autoSize?.recommended.capCost ?? 0;
+    const nonCondCap = nonCond.autoSize?.recommended.capCost ?? 0;
+    expect(nonCondCap).toBeLessThan(condCap); // ~28% discount
+    expect(nonCondCap).toBeGreaterThan(0);
+  });
+
+  it("non_condensing burns more fuel for the same demand (lower efficiency)", () => {
+    const cond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", centralBoilerType: "condensing", gasEfficiency: 0.95 });
+    const nonCond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas", centralBoilerType: "non_condensing", gasEfficiency: 0.78 });
+    expect(nonCond.annualGasTherms).toBeGreaterThan(cond.annualGasTherms);
+  });
+
+  it("central_indirect non_condensing also gets the cost discount", () => {
+    const cond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect", centralBoilerType: "condensing" });
+    const nonCond = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect", centralBoilerType: "non_condensing" });
+    const condCap = cond.autoSize?.recommended.capCost ?? 0;
+    const nonCondCap = nonCond.autoSize?.recommended.capCost ?? 0;
+    expect(nonCondCap).toBeLessThan(condCap);
+  });
+});

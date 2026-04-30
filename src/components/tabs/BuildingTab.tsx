@@ -5,8 +5,12 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field, NumberInput, SelectInput } from "@/components/ui/Field";
 import { Grid } from "@/components/ui/Grid";
 import {
+  CENTRAL_BOILER_COST_FACTOR,
+  CENTRAL_BOILER_DEFAULT_EFFICIENCY,
+  CENTRAL_BOILER_LABEL,
   CLIMATE_DESIGN,
   HPWH_TIER_ADJUSTMENT,
+  type CentralBoilerType,
   type ClimateZoneKey,
   type HPWHTier,
 } from "@/lib/engineering/constants";
@@ -219,7 +223,41 @@ export function BuildingTab({ inputs, update }: Props) {
             HPWH — regardless of which heat source you actually selected.
           </p>
           <Grid cols={3}>
-            <Field label="Gas efficiency" suffix="%" hint="Condensing 95–98%, near-condensing 90%, atmospheric 80–82%">
+            <Field
+              label="Central boiler type"
+              hint={`Drives the default efficiency shown below. ${CENTRAL_BOILER_LABEL.condensing} ~${(CENTRAL_BOILER_DEFAULT_EFFICIENCY.condensing * 100).toFixed(0)}%; ${CENTRAL_BOILER_LABEL.non_condensing} ~${(CENTRAL_BOILER_DEFAULT_EFFICIENCY.non_condensing * 100).toFixed(0)}%. Non-condensing also reduces installed cost by ~${Math.round((1 - CENTRAL_BOILER_COST_FACTOR.non_condensing) * 100)}%.`}
+            >
+              <SelectInput<CentralBoilerType>
+                value={inputs.centralBoilerType}
+                onChange={(v) => {
+                  // Switching type also resets gasEfficiency to the new
+                  // default IF the user is currently at the previous default
+                  // — preserves manual overrides, follows the user's intent
+                  // when they hadn't customized yet.
+                  const prevDefault = CENTRAL_BOILER_DEFAULT_EFFICIENCY[inputs.centralBoilerType];
+                  if (Math.abs(inputs.gasEfficiency - prevDefault) < 0.005) {
+                    update("gasEfficiency", CENTRAL_BOILER_DEFAULT_EFFICIENCY[v]);
+                  }
+                  update("centralBoilerType", v);
+                }}
+                options={[
+                  { value: "condensing", label: CENTRAL_BOILER_LABEL.condensing },
+                  { value: "non_condensing", label: CENTRAL_BOILER_LABEL.non_condensing },
+                ]}
+              />
+            </Field>
+            <Field
+              label="Gas efficiency (manual override)"
+              suffix="%"
+              hint={(() => {
+                const def = CENTRAL_BOILER_DEFAULT_EFFICIENCY[inputs.centralBoilerType];
+                const current = inputs.gasEfficiency;
+                const isDefault = Math.abs(current - def) < 0.005;
+                return isDefault
+                  ? `Default for ${CENTRAL_BOILER_LABEL[inputs.centralBoilerType]}: ${(def * 100).toFixed(0)}% (matches current)`
+                  : `Default for ${CENTRAL_BOILER_LABEL[inputs.centralBoilerType]}: ${(def * 100).toFixed(0)}% — current ${(current * 100).toFixed(0)}% is a manual override`;
+              })()}
+            >
               <NumberInput
                 value={Math.round(inputs.gasEfficiency * 100)}
                 onChange={(n) => update("gasEfficiency", n / 100)}

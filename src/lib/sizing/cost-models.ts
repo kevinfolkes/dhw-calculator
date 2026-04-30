@@ -4,6 +4,7 @@
  * *only* used by the auto-sizer's 15-year lifecycle-total comparison; they
  * do not feed the annual energy results.
  */
+import { CENTRAL_BOILER_COST_FACTOR, type CentralBoilerType } from "@/lib/engineering/constants";
 import type { SystemTypeKey } from "@/lib/engineering/system-types";
 
 export interface InstalledCostParams {
@@ -12,6 +13,10 @@ export interface InstalledCostParams {
   kW?: number;
   tankGal?: number;
   subtype?: "atmospheric" | "condensing";
+  /** Central boiler subtype — applies to central_gas, central_indirect, and
+   *  the gas-backup leg of central_hybrid. Non-condensing boilers cost ~28%
+   *  less for the same input rating. Defaults to "condensing" if absent. */
+  boilerType?: CentralBoilerType;
 }
 
 export function installedCost(
@@ -19,8 +24,10 @@ export function installedCost(
   params: InstalledCostParams,
   totalUnits: number,
 ): number {
+  const boilerFactor = CENTRAL_BOILER_COST_FACTOR[params.boilerType ?? "condensing"];
+
   if (systemType === "central_gas") {
-    return 15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12;
+    return boilerFactor * (15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12);
   }
   if (systemType === "central_gas_tankless") {
     // Modulating condensing tankless central plant: $4,000 base + $4/MBH
@@ -34,7 +41,7 @@ export function installedCost(
     // indirect storage tank / plate HX, controls, and the secondary loop
     // pumping that distinguishes an indirect plant from a direct-fired
     // central gas water heater.
-    return 1.25 * (15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12);
+    return 1.25 * boilerFactor * (15000 + (params.storageGal ?? 0) * 8 + (params.inputMBH ?? 0) * 12);
   }
   if (systemType === "central_hybrid") {
     // HPWH primary + gas backup: full HPWH cost on the primary side
@@ -44,7 +51,7 @@ export function installedCost(
     // peak shortfall rather than the full load — smaller burner, same
     // venting/controls/manifold complexity. Storage is shared.
     const hpwhPart = 40000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
-    const gasPart = 0.6 * (15000 + (params.inputMBH ?? 0) * 12);
+    const gasPart = 0.6 * boilerFactor * (15000 + (params.inputMBH ?? 0) * 12);
     return hpwhPart + gasPart;
   }
   if (systemType === "central_steam_hx") {

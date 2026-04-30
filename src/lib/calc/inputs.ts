@@ -5,6 +5,7 @@
  * single pure `runCalc()` function.
  */
 import type {
+  CentralBoilerType,
   CentralGasTanklessInput,
   ClimateZoneKey,
   EnvelopeKey,
@@ -79,6 +80,14 @@ export interface DhwInputs {
   ambientPipeF: number;
 
   // Central tech
+  /**
+   * Boiler type for central_gas, central_indirect, and the gas backup leg of
+   * central_hybrid. Drives the default `gasEfficiency` shown next to the
+   * manual override and the cost-model multiplier (non-condensing boilers
+   * cost ~28% less for the same input MBH). Stays "condensing" for systems
+   * where the distinction does not apply (no observable effect).
+   */
+  centralBoilerType: CentralBoilerType;
   gasEfficiency: number;
   hpwhRefrigerant: Refrigerant;
   /** null → derive from mech room annual */
@@ -177,6 +186,7 @@ export const DEFAULT_INPUTS: DhwInputs = {
   pipeInsulationR: 4,
   recircReturnTempF: 125,
   ambientPipeF: 70,
+  centralBoilerType: "condensing",
   gasEfficiency: 0.95,
   hpwhRefrigerant: "CO2",
   hpwhAmbientF: null,

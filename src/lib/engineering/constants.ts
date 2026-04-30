@@ -230,6 +230,37 @@ export const HPWH_TIER_ADJUSTMENT: Record<HPWHTier, HPWHTierSpec> = {
 };
 
 // ---------------------------------------------------------------------------
+// Central boiler type (applies to central_gas, central_indirect, and the gas
+// backup leg of central_hybrid). Picks the typical efficiency tier so the
+// `gasEfficiency` field can show the right default-for-type alongside any
+// manual override the user enters.
+//
+// Reference values:
+//   - Condensing:     η ~0.92–0.97 (ASHRAE 90.1-2022 Table 7.8 minimum 0.90 thermal eff)
+//   - Non-condensing: η ~0.78–0.84 (atmospheric / power-vent older equipment)
+// ---------------------------------------------------------------------------
+export type CentralBoilerType = "condensing" | "non_condensing";
+
+export const CENTRAL_BOILER_DEFAULT_EFFICIENCY: Record<CentralBoilerType, number> = {
+  condensing: 0.95,
+  non_condensing: 0.78,
+};
+
+export const CENTRAL_BOILER_LABEL: Record<CentralBoilerType, string> = {
+  condensing: "Condensing",
+  non_condensing: "Non-condensing",
+};
+
+// Cost multiplier applied to the central boiler base cost when the boiler is
+// non-condensing. Non-condensing boilers are simpler (no condensate handling,
+// less stringent venting, less expensive heat exchangers) and run ~25–30%
+// cheaper for the same input rating.
+export const CENTRAL_BOILER_COST_FACTOR: Record<CentralBoilerType, number> = {
+  condensing: 1.0,
+  non_condensing: 0.72,
+};
+
+// ---------------------------------------------------------------------------
 // In-unit gas tank WH (ENERGY STAR, AHRI Directory, DOE UEF)
 // ---------------------------------------------------------------------------
 export type GasTankSize = 40 | 50 | 75 | 100;

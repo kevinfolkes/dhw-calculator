@@ -55,7 +55,12 @@ export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
   const st = input.systemType;
 
   const annualCostForSize = (params: InstalledCostParams) => annualCostForSizeImpl(ctx, params);
-  const ic = (params: InstalledCostParams) => installedCost(st, params, totalUnits);
+  // Auto-inject the user's selected central boiler type into every cost
+  // calculation so the non-condensing discount applies wherever a boiler is
+  // implied (central_gas, central_indirect, central_hybrid gas backup).
+  // Cost models that do not consult `boilerType` ignore it.
+  const ic = (params: InstalledCostParams) =>
+    installedCost(st, { boilerType: input.centralBoilerType, ...params }, totalUnits);
 
   // ---------- CENTRAL ----------
   if (st === "central_gas" || st === "central_resistance" || st === "central_hpwh") {

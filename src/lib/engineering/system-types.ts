@@ -37,14 +37,14 @@ export interface SystemTypeDef {
 
 export const SYSTEM_TYPES: Record<SystemTypeKey, SystemTypeDef> = {
   central_gas: {
-    label: "Central Gas (condensing) + Recirc",
+    label: "Central Gas + Recirc (condensing or non-condensing)",
     short: "Central Gas",
     topology: "central",
     tech: "gas",
     hasRecirc: true,
     hasSpaceHeating: false,
     description:
-      "Traditional central plant. Gas condensing water heaters with storage tanks and recirculation loop serving all units. Baseline comparison for electrification projects.",
+      "Traditional central plant with gas water heaters and a recirculation loop serving all units. Use the Building & System tab's boiler-type selector to switch between condensing (~95% η) and non-condensing (~78% η) defaults. Baseline comparison for electrification projects.",
     archetypes: "Lochinvar Armor/Shield, AO Smith Cyclone, AERCO Innovation, RBI Futera",
     color: "#f2a85b",
   },
