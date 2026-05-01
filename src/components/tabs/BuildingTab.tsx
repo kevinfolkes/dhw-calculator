@@ -290,12 +290,28 @@ export function BuildingTab({ inputs, update }: Props) {
           inputs.systemType === "central_gas_tankless" ||
           inputs.systemType === "central_indirect" ||
           inputs.systemType === "central_hybrid" ||
-          inputs.systemType === "central_steam_hx";
+          inputs.systemType === "central_steam_hx" ||
+          inputs.systemType === "central_hrc";
         const showHpwhParams =
           inputs.systemType === "central_hpwh" ||
-          inputs.systemType === "central_hybrid";
-        const showSwingTank = showHpwhParams; // electric-resistance boost on the HPWH side
-        const numShown = (showGasParams ? 2 : 0) + (showHpwhParams ? 2 : 0) + (showSwingTank ? 1 : 0);
+          inputs.systemType === "central_hybrid" ||
+          inputs.systemType === "central_per_floor" ||
+          inputs.systemType === "central_wastewater_hp";
+        const showSwingTank = showHpwhParams || inputs.systemType === "central_hrc";
+        // Per-floor adds zone count; HRC adds 3 fields (tons, year-round
+        // fraction, HR COP) plus gas-backup fields (already in showGasParams);
+        // wastewater adds source temp + COP. Track these so the heat-source
+        // grid sizes appropriately.
+        const showPerFloorParams = inputs.systemType === "central_per_floor";
+        const showHrcParams = inputs.systemType === "central_hrc";
+        const showWastewaterParams = inputs.systemType === "central_wastewater_hp";
+        const numShown =
+          (showGasParams ? 2 : 0) +
+          (showHpwhParams ? 2 : 0) +
+          (showSwingTank ? 1 : 0) +
+          (showPerFloorParams ? 1 : 0) +
+          (showHrcParams ? 3 : 0) +
+          (showWastewaterParams ? 2 : 0);
         if (numShown === 0) return null; // central_resistance has nothing to tune here
         return (
         <Card>
@@ -425,6 +441,92 @@ export function BuildingTab({ inputs, update }: Props) {
                 ]}
               />
             </Field>}
+            {showPerFloorParams && (
+              <Field
+                label="Per-floor / per-stack zone count"
+                hint="Number of independent HPWH plants serving the building. Each zone serves totalUnits/zoneCount and runs its own short recirc loop. Range 2–20; default 4 = one plant per floor on a 4-story mid-rise."
+              >
+                <NumberInput
+                  value={inputs.perFloorZoneCount}
+                  onChange={(n) => update("perFloorZoneCount", n)}
+                  min={2}
+                  max={20}
+                  step={1}
+                />
+              </Field>
+            )}
+            {showHrcParams && (
+              <Field
+                label="Cooling tonnage"
+                suffix="tons"
+                hint="Total building cooling tonnage. Drives the HRC's available heat-recovery capacity. Range 10–500; data centers + large mixed-use are at the high end."
+              >
+                <NumberInput
+                  value={inputs.hrcCoolingTons}
+                  onChange={(n) => update("hrcCoolingTons", n)}
+                  min={10}
+                  max={500}
+                  step={5}
+                />
+              </Field>
+            )}
+            {showHrcParams && (
+              <Field
+                label="Year-round cooling fraction"
+                hint="Fraction of cooling load running year-round (1.0 = data center, ~0.6 = mixed-use w/ retail, ~0.3 = residential AC). This drives DHW recovery availability. Range 0.0–1.0."
+              >
+                <NumberInput
+                  value={inputs.hrcYearRoundCoolingFraction}
+                  onChange={(n) => update("hrcYearRoundCoolingFraction", n)}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                />
+              </Field>
+            )}
+            {showHrcParams && (
+              <Field
+                label="HR-mode COP"
+                hint="Combined cooling+heating COP when running in heat-recovery mode. Heat rejected to DHW per BTU of cooling = COP/(COP-1). Range 2.5–6.0; default 4.0 reflects a typical CenTraVac / AquaForce."
+              >
+                <NumberInput
+                  value={inputs.hrcCOPHeatRecovery}
+                  onChange={(n) => update("hrcCOPHeatRecovery", n)}
+                  min={2.5}
+                  max={6}
+                  step={0.1}
+                />
+              </Field>
+            )}
+            {showWastewaterParams && (
+              <Field
+                label="Wastewater source temp"
+                suffix="°F"
+                hint="Average sewer/wastewater temperature at the building tap. Stable year-round (~55–65°F). Range 50–70°F. Residential bias toward shower-heated water keeps the sewer warm."
+              >
+                <NumberInput
+                  value={inputs.wastewaterSourceTempF}
+                  onChange={(n) => update("wastewaterSourceTempF", n)}
+                  min={50}
+                  max={70}
+                  step={1}
+                />
+              </Field>
+            )}
+            {showWastewaterParams && (
+              <Field
+                label="Wastewater HPWH COP"
+                hint="Heat pump COP at the wastewater source temperature. Higher than air-source HPWH because the source is warm + stable. Range 3.0–6.0; default 4.5 reflects typical SHARC / Huber field data."
+              >
+                <NumberInput
+                  value={inputs.wastewaterCOP}
+                  onChange={(n) => update("wastewaterCOP", n)}
+                  min={3}
+                  max={6}
+                  step={0.1}
+                />
+              </Field>
+            )}
           </Grid>
         </Card>
         );

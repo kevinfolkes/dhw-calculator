@@ -16,6 +16,7 @@ import {
   GRID_EF,
   HPWH_TANK_FHR,
   HPWH_TIER_ADJUSTMENT,
+  HRC_UTILIZATION_FACTOR,
   INUNIT_GAS_BUFFER_TANK_SIZES,
   INUNIT_RESISTANCE_TANK_SPEC,
   MONTHLY_HDD_FRAC,
@@ -60,6 +61,9 @@ export function runCalc(input: DhwInputs): CalcResult {
     gasTanklessInput, tanklessDesignRiseF, tanklessSimultaneousFixtures, gasTanklessSetpointF,
     centralGasTanklessInput, indirectHXEffectiveness,
     hybridSplitRatio, steamSourceEfficiency, steamHXEffectiveness, steamSupplyPressurePSIG,
+    perFloorZoneCount,
+    hrcCoolingTons, hrcYearRoundCoolingFraction, hrcCOPHeatRecovery,
+    wastewaterSourceTempF, wastewaterCOP,
     inunitGasTanklessCombiInput, inunitGasCombiBufferTankSize, inunitResistanceTankSize,
     bufferTankEnabled,
     preheat, solarCollectorAreaSqft, dwhrEffectiveness, dwhrCoverage,
@@ -187,11 +191,26 @@ export function runCalc(input: DhwInputs): CalcResult {
     ? applyRecircControl(rawRecirc, recircControl, timeClockHoursPerDay)
     : { lossBTUH: rawRecirc.lossBTUH, lossKW: rawRecirc.lossKW, multiplier: 1.0 };
   const recircLossRawBTUH = rawRecirc.lossBTUH;
-  const recircLossBTUH = adjustedRecirc.lossBTUH;
-  const recircLossKW = adjustedRecirc.lossKW;
+  // Per-floor decentralized HPWH (Phase F): each zone serves a fraction of
+  // the building with its own short recirc loop, so total summed recirc loss
+  // scales as ~1/zoneCount vs a single full-building loop. This is a
+  // simplified proxy for the real engineering effect (shorter loops + tighter
+  // return-temp control) — see ASHRAE Apps Ch. 51 §"Distributed Service
+  // Water Heating" commentary on per-floor / per-stack distribution.
+  const isCentralPerFloor = systemType === "central_per_floor";
+  const safePerFloorZoneCount = Math.max(1, Math.min(20, Math.floor(perFloorZoneCount)));
+  const perFloorRecircFactor = isCentralPerFloor ? 1 / safePerFloorZoneCount : 1;
+  const recircLossBTUH = adjustedRecirc.lossBTUH * perFloorRecircFactor;
+  const recircLossKW = recircLossBTUH / 3412;
   const recircControlMultiplier = sysDef.hasRecirc ? adjustedRecirc.multiplier : 0;
   const recircLossSavingsBTUH = sysDef.hasRecirc
     ? Math.max(0, recircLossRawBTUH - recircLossBTUH)
+    : 0;
+  // Surfaced reduction for the per-floor case: how much loss the
+  // decentralization saves vs a single full-length loop at the same control
+  // mode. Zero (sentinel) for all other system types.
+  const perFloorRecircLossReduction = isCentralPerFloor
+    ? Math.max(0, adjustedRecirc.lossBTUH - recircLossBTUH)
     : 0;
 
   // ---- STORAGE / RECOVERY (ASHRAE) --------------------------------------
@@ -223,6 +242,24 @@ export function runCalc(input: DhwInputs): CalcResult {
 
   const totalBTUH = recoveryBTUH + recircLossBTUH;
   const totalKW = totalBTUH / 3412;
+
+  // ---- CENTRAL HRC (heat-recovery chiller) — capacity calc -------------
+  // Compute these eagerly so the annual rollup below can reference the
+  // resolved capacity / COP directly. Pipeline-level gating zeros the
+  // surfaced result fields for non-HRC systems.
+  const isCentralHRC = systemType === "central_hrc";
+  const safeHrcCOP = Math.min(6.0, Math.max(2.5, hrcCOPHeatRecovery));
+  const safeHrcYearRound = Math.min(1.0, Math.max(0.0, hrcYearRoundCoolingFraction));
+  const safeHrcTons = Math.max(0, hrcCoolingTons);
+  const hrcCapacityBTUHRaw = isCentralHRC
+    ? safeHrcTons * 12000 * safeHrcYearRound * (safeHrcCOP / Math.max(1.001, safeHrcCOP - 1))
+    : 0;
+  const hrcCapacityBTUH = isCentralHRC ? hrcCapacityBTUHRaw : 0;
+
+  // ---- CENTRAL WASTEWATER HP — effective COP -------------------------
+  const isCentralWastewaterHP = systemType === "central_wastewater_hp";
+  const safeWastewaterCOP = Math.min(6.0, Math.max(3.0, wastewaterCOP));
+  const wastewaterEffectiveCOP = isCentralWastewaterHP ? safeWastewaterCOP : 0;
 
   // ---- TECH COMPARISON ---------------------------------------------------
   // For `central_indirect`, the boiler-side input must overcome both the
@@ -289,6 +326,36 @@ export function runCalc(input: DhwInputs): CalcResult {
       (swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0);
   }
 
+  // ---- CENTRAL HRC: split annual BTU between HRC contribution (electric)
+  // and gas backup. HRC contribution capped by capacity × utilization × 8760.
+  // Gas backup covers the remainder at the standard gasEfficiency.
+  let hrcAnnualContributionBTU = 0;
+  let hrcCoverageFraction = 0;
+  if (isCentralHRC) {
+    const hrcMaxAnnualBTU = hrcCapacityBTUH * 8760 * HRC_UTILIZATION_FACTOR;
+    hrcAnnualContributionBTU = Math.min(annualTotalBTU, hrcMaxAnnualBTU);
+    hrcCoverageFraction = annualTotalBTU > 0
+      ? hrcAnnualContributionBTU / annualTotalBTU
+      : 0;
+    const backupBTU = Math.max(0, annualTotalBTU - hrcAnnualContributionBTU);
+    annualGasTherms = backupBTU / (gasEfficiency * 100000);
+    // HRC electric energy = useful heat delivered ÷ HR-mode COP
+    // (the chiller's compressor work to lift the heat from the cooling
+    // source to DHW setpoint).
+    annualHPWHKWh_total =
+      hrcAnnualContributionBTU / 3412 / safeHrcCOP +
+      (swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0);
+  }
+
+  // ---- CENTRAL WASTEWATER HP: source temp is stable year-round so the
+  // annual COP is just the user-configured wastewaterCOP. Pure electric.
+  if (isCentralWastewaterHP) {
+    annualGasTherms = 0;
+    annualHPWHKWh_total =
+      annualTotalBTU / 3412 / safeWastewaterCOP +
+      (swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0);
+  }
+
   const annualGasCost = annualGasTherms * gasRate;
   const annualResistanceCost = annualResistanceKWh * elecRate;
   const annualHPWHCost = annualHPWHKWh_total * elecRate;
@@ -308,6 +375,9 @@ export function runCalc(input: DhwInputs): CalcResult {
       ? annualResistanceKWh
       : systemType === "central_hpwh" ||
         systemType === "central_hybrid" ||
+        systemType === "central_per_floor" ||
+        systemType === "central_hrc" ||
+        systemType === "central_wastewater_hp" ||
         systemType === "inunit_hpwh" ||
         systemType === "inunit_combi"
       ? annualHPWHKWh_total
@@ -754,6 +824,38 @@ export function runCalc(input: DhwInputs): CalcResult {
       dhwEnergy = monthTotalBTU / 3412 / monthCOP_central;
       unit = "kWh";
       dhwCost = dhwEnergy * elecRate;
+    } else if (systemType === "central_per_floor") {
+      // Same HPWH efficiency as central_hpwh (compressor physics unchanged)
+      // — the savings show up because recircLossBTUH is already reduced by
+      // the 1/zoneCount factor at the top of the pipeline.
+      const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
+      dhwEnergy = monthTotalBTU / 3412 / monthCOP_central;
+      unit = "kWh";
+      dhwCost = dhwEnergy * elecRate;
+    } else if (systemType === "central_hrc") {
+      // Heat-recovery chiller: split monthly BTU between HRC contribution
+      // (electric, at HR-mode COP) and gas backup (therms, at gasEfficiency).
+      // Use the annual coverage fraction as a flat monthly proxy — a real
+      // bin model would weight by simultaneous cooling+DHW demand, but for
+      // monthly granularity the coverage averages out.
+      const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
+      const monthHrcBTU = monthTotalBTU * hrcCoverageFraction;
+      const monthBackupBTU = monthTotalBTU - monthHrcBTU;
+      const monthHrcKWh = monthHrcBTU / 3412 / safeHrcCOP;
+      const monthBackupTherms = monthBackupBTU / (gasEfficiency * 100000);
+      // Report monthly energy in therms (proxy unit) so cost / carbon cards
+      // reuse the gas-bearing infrastructure; therms-equivalent of HRC kWh
+      // ≈ monthHrcKWh / 29.3 lets the totalEnergy line stay non-zero.
+      unit = "therms";
+      dhwEnergy = monthBackupTherms + monthHrcKWh / 29.3;
+      dhwCost = monthBackupTherms * gasRate + monthHrcKWh * elecRate;
+    } else if (systemType === "central_wastewater_hp") {
+      // Sewer-source HPWH at the user-configured (stable) source COP.
+      // No monthly air-temp variation since the source is wastewater.
+      const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
+      dhwEnergy = monthTotalBTU / 3412 / safeWastewaterCOP;
+      unit = "kWh";
+      dhwCost = dhwEnergy * elecRate;
     } else if (systemType === "inunit_gas_tank") {
       dhwEnergy = monthDHWBTU_inunit_total / (gasTankUEF * 100000);
       unit = "therms";
@@ -846,6 +948,15 @@ export function runCalc(input: DhwInputs): CalcResult {
       effectiveMonthCOP_dhw = 1.0;
     } else if (systemType === "central_hpwh") {
       effectiveMonthCOP_dhw = monthCOP_central;
+    } else if (systemType === "central_per_floor") {
+      effectiveMonthCOP_dhw = monthCOP_central;
+    } else if (systemType === "central_hrc") {
+      // Blended effective efficiency: HRC share at HR-mode COP, backup at
+      // gasEfficiency. Weight by the annual coverage fraction.
+      effectiveMonthCOP_dhw =
+        hrcCoverageFraction * safeHrcCOP + (1 - hrcCoverageFraction) * gasEfficiency;
+    } else if (systemType === "central_wastewater_hp") {
+      effectiveMonthCOP_dhw = safeWastewaterCOP;
     } else if (systemType === "inunit_gas_tank") {
       effectiveMonthCOP_dhw = gasTankUEF;
     } else if (systemType === "inunit_gas_tankless") {
@@ -1038,6 +1149,21 @@ export function runCalc(input: DhwInputs): CalcResult {
     inunitGasCombiBufferRequiredGal,
     inunitGasCombiBufferSelectedGal,
     inunitGasCombiPeakInstantGPM,
+    perFloorPerZoneKW: isCentralPerFloor
+      ? +(typeof autoSizeResults?.recommended?.cap === "number"
+          ? (autoSizeResults!.recommended!.cap as number)
+          : 0).toFixed(2)
+      : 0,
+    perFloorTotalInstalledKW: isCentralPerFloor
+      ? +(typeof autoSizeResults?.recommended?.cap === "number"
+          ? (autoSizeResults!.recommended!.cap as number) * safePerFloorZoneCount
+          : 0).toFixed(2)
+      : 0,
+    perFloorRecircLossReduction: +perFloorRecircLossReduction.toFixed(0),
+    hrcCapacityBTUH: +hrcCapacityBTUH.toFixed(0),
+    hrcAnnualContributionBTU: +hrcAnnualContributionBTU.toFixed(0),
+    hrcCoverageFraction: +hrcCoverageFraction.toFixed(4),
+    wastewaterEffectiveCOP: +wastewaterEffectiveCOP.toFixed(3),
     preheatType: preheat,
     annualSolarFraction: preheatActive ? +annualSolarFraction.toFixed(4) : 0,
     annualDwhrLiftF: preheatActive ? +annualDwhrLiftF.toFixed(2) : 0,

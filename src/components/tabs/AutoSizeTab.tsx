@@ -605,6 +605,20 @@ const SIZED_VARIABLES: Record<SystemTypeKey, SizedVariable[]> = {
     { label: "Primary storage (gal)", detail: "Same tank sizes as central gas.", constraint: "peak_hour × 1.25 ÷ 0.75" },
     { label: "HPWH nameplate (kW)", detail: "From 15 / 20 / 30 / 40 / 60 / 80 / 120 / 160 / 200 / 300 kW. Size must cover cold-ambient derating.", constraint: "total_kW ÷ COP ÷ capacity_factor" },
   ],
+  central_per_floor: [
+    { label: "Per-zone storage (gal)", detail: "Each zone gets its own tank from the central ladder. Per-zone gallons = building peak-hour × storage_coef ÷ usable_fraction ÷ zoneCount.", constraint: "(peak_hour × 1.25 ÷ 0.75) ÷ zoneCount" },
+    { label: "Per-zone HPWH (kW)", detail: "Each zone gets its own HPWH from the standard CENTRAL_HPWH_KW ladder; total installed kW = perZoneKW × zoneCount.", constraint: "(total_kW ÷ zoneCount) ÷ COP ÷ capacity_factor" },
+    { label: "Zone count", detail: "Number of independent HPWH plants (one per floor / per stack / per riser). Range 2–20; default 4 reflects mid-rise practice." },
+  ],
+  central_hrc: [
+    { label: "Storage tank (gal)", detail: "Standard central tank ladder, sized for the full DHW peak-hour buffer.", constraint: "peak_hour × 1.25 ÷ 0.75" },
+    { label: "Gas backup (MBH)", detail: "Sized to cover the shortfall after HRC contribution. From the standard central gas MBH ladder.", constraint: "(total_BTUH − hrc_capacity) ÷ gas_η" },
+    { label: "Cooling tonnage (informational)", detail: "Driver of HRC capacity. The chiller capex itself is out of scope — we only price the HRC integration and DHW backup. Range 10–500 tons." },
+  ],
+  central_wastewater_hp: [
+    { label: "Storage tank (gal)", detail: "Standard central tank ladder, sized for peak-hour buffer.", constraint: "peak_hour × 1.25 ÷ 0.75" },
+    { label: "HPWH nameplate (kW)", detail: "From the standard CENTRAL_HPWH_KW ladder. Source temp is stable year-round so no air-ambient capacity derate.", constraint: "total_kW ÷ wastewaterCOP" },
+  ],
   inunit_gas_tank: [
     { label: "Per-unit tank (gal)", detail: "40 / 50 / 75 / 100 gal, sized to meet FHR.", constraint: "FHR ≥ peak_hour_per_apt" },
     { label: "Efficiency tier", detail: "Condensing (UEF 0.80–0.96, PVC direct-vent) vs non-condensing (UEF 0.60–0.70, Cat I atmospheric or Cat III power-vent). Federal UEF 0.81+ restricts atmospheric ≥50 gal for new construction." },
@@ -665,6 +679,9 @@ function recommendedMarginLabel(st: SystemTypeKey): string {
     case "central_steam_hx": return "+25% MBH (HX-derated)";
     case "central_resistance": return "+20% kW";
     case "central_hpwh": return "+25% nameplate";
+    case "central_per_floor": return "+25% per-zone kW";
+    case "central_hrc": return "+25% backup MBH";
+    case "central_wastewater_hp": return "+25% nameplate";
     case "inunit_gas_tank": return "+15% FHR";
     case "inunit_gas_tankless": return "+15% capacity";
     case "inunit_hpwh": return "+15% FHR";
@@ -685,6 +702,9 @@ function recommendedRuleLabel(st: SystemTypeKey): string {
     case "central_steam_hx": return "Smallest steam HX MBH ≥ 1.25 × minimum, where minimum derates by steam_source_eff × HX_effectiveness";
     case "central_resistance": return "Smallest kW ≥ 1.20 × minimum";
     case "central_hpwh": return "Smallest nameplate ≥ 1.25 × minimum (absorbs cold-ambient derate)";
+    case "central_per_floor": return "Per-zone HPWH ≥ 1.25 × (total_kW ÷ zoneCount); each zone independently sized from the standard ladder";
+    case "central_hrc": return "Gas backup MBH ≥ 1.25 × shortfall after HRC coverage; storage sized as a normal central plant";
+    case "central_wastewater_hp": return "Smallest HPWH nameplate ≥ 1.25 × (total_kW ÷ wastewaterCOP)";
     case "inunit_gas_tank": return "Smallest tank whose condensing FHR ≥ 1.15 × peak-hour per unit";
     case "inunit_gas_tankless": return "Smallest input whose capacity at design rise ≥ 1.15 × peak GPM";
     case "inunit_hpwh": return "Smallest tank whose FHR ≥ 1.15 × peak-hour per unit";

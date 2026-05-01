@@ -305,6 +305,34 @@ export interface CalcResult {
   /** Per-month solar fraction (0..0.85), 12 entries indexed Jan..Dec. All
    *  zero when solar is inactive. */
   monthlySolarFractions: number[];
+  /** Per-zone HPWH nameplate kW for `central_per_floor`
+   *  (= total nameplate kW ÷ zoneCount, snapped to the next CENTRAL_HPWH_KW
+   *  rung). Zero for all other system types so tabs can detect the per-floor
+   *  case via `perFloorPerZoneKW > 0`. */
+  perFloorPerZoneKW: number;
+  /** Total installed kW across all per-floor zones for `central_per_floor`
+   *  (= perFloorPerZoneKW × zoneCount). Zero for all other system types. */
+  perFloorTotalInstalledKW: number;
+  /** BTU/hr of recirc-loop loss avoided vs a single full-length loop on
+   *  `central_per_floor` (per-zone loops scale as 1/N the length, so total
+   *  loss across N short loops is ~1/N the single-loop loss). Always
+   *  non-negative; zero for all other system types. */
+  perFloorRecircLossReduction: number;
+  /** Available HRC heat-recovery capacity for `central_hrc` (BTU/hr) at the
+   *  configured cooling tonnage, year-round fraction, and HR-mode COP.
+   *  Zero for all other system types. */
+  hrcCapacityBTUH: number;
+  /** Annual BTU contributed by the HRC to DHW for `central_hrc`. Bounded by
+   *  the available capacity × utilization factor × 8760 hr and by the
+   *  annual DHW load. Zero for all other system types. */
+  hrcAnnualContributionBTU: number;
+  /** Fraction of annual DHW load covered by HRC for `central_hrc` (0–1).
+   *  Zero for all other system types. */
+  hrcCoverageFraction: number;
+  /** Effective HPWH COP at the wastewater source temperature for
+   *  `central_wastewater_hp` (echoes the input `wastewaterCOP` clamped to
+   *  the valid 3.0–6.0 range). Zero for all other system types. */
+  wastewaterEffectiveCOP: number;
   /** Echo of the selected recirc control mode (Phase E). For non-recirc
    *  systems this still echoes the user-entered value but the multiplier
    *  / savings fields are zeroed because there is no recirc loop. */

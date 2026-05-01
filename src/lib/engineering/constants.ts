@@ -464,6 +464,36 @@ export const DWHR_DEFAULT_EFFECTIVENESS = 0.50;
 export const DWHR_DRAIN_TEMP_F = 95;
 
 // ---------------------------------------------------------------------------
+// Specialty central system constants — Phase F
+//
+// Per-floor / per-stack decentralized HPWH (`central_per_floor`):
+//   Allowable HPWH-zone counts. 4 is the typical mid-rise default (one HPWH
+//   per floor of a 4-story building); 2 = per-stack pairings, 20 = full per-
+//   floor on a 20-story building.
+//
+// Heat-recovery chiller integration (`central_hrc`):
+//   `HRC_UTILIZATION_FACTOR` accounts for the cooling-DHW timing mismatch —
+//   even if the chiller is rejecting heat at design rate, only ~70% of that
+//   reject can be captured for DHW because cooling demand peaks at noon while
+//   DHW demand peaks at morning + evening. Reference: ASHRAE Apps Ch. 36
+//   §"Heat Recovery", ASHRAE 90.1-2022 §6.5.6.
+//
+// Wastewater / sewer-source heat pump (`central_wastewater_hp`):
+//   Source-temperature defaults bound to the typical 50–70°F observed range
+//   for raw sewage at residential building tap. SHARC International field
+//   data and NYC Hudson Yards / Vancouver False Creek installation reports.
+// ---------------------------------------------------------------------------
+
+/** Default HPWH-zone count for `central_per_floor` (one plant per floor on a
+ *  4-story mid-rise). Range 2–20. */
+export const PER_FLOOR_DEFAULT_ZONE_COUNT = 4;
+
+/** Effective utilization factor for HRC heat recovery — fraction of the
+ *  rejected heat physically capturable for DHW given cooling/DHW timing
+ *  mismatch and storage buffering. ~0.70 per ASHRAE Apps Ch. 36. */
+export const HRC_UTILIZATION_FACTOR = 0.70;
+
+// ---------------------------------------------------------------------------
 // Recirculation control modes — Phase E
 //
 // Modulates the recirc-loop pumping schedule, which scales the standby loss

@@ -211,6 +211,43 @@ export interface DhwInputs {
    *  / (8.33 × 15°F swing); the user can override to step up the SKU. */
   inunitGasCombiBufferTankSize: InunitGasBufferTankSize;
 
+  // Central per-floor / per-stack decentralized HPWH (Phase F)
+  /** Number of independent HPWH plants serving the building on a
+   *  `central_per_floor` system. Each zone serves `totalUnits / zoneCount`
+   *  units with its own short recirc loop. Range 2–20; default 4 reflects
+   *  one plant per floor on a 4-story mid-rise. Per-zone recirc loop length
+   *  scales as `recircLoopLengthFt / zoneCount`, and per-zone HPWH kW is
+   *  selected from the standard `CENTRAL_HPWH_KW` ladder for the per-zone
+   *  share of design BTU/hr. */
+  perFloorZoneCount: number;
+
+  // Central heat-recovery chiller integration (Phase F)
+  /** Total building cooling tonnage on a `central_hrc` system. Drives the
+   *  available heat-recovery capacity from the chiller condenser side.
+   *  Range 10–500. */
+  hrcCoolingTons: number;
+  /** Fraction of the cooling load that operates year-round on a `central_hrc`
+   *  system (1.0 for data centers, ~0.6 for mixed-use with retail or large
+   *  server rooms, ~0.3 for residential AC). Drives DHW recovery
+   *  availability. Range 0.0–1.0. */
+  hrcYearRoundCoolingFraction: number;
+  /** Combined cooling + heating COP when the chiller is operating in heat-
+   *  recovery mode on a `central_hrc` system. Heat rejected to DHW per BTU
+   *  of cooling delivered = `cooling_BTU × COP / (COP − 1)`. Range 2.5–6.0;
+   *  default 4.0 reflects a typical CenTraVac / AquaForce in HR mode. */
+  hrcCOPHeatRecovery: number;
+
+  // Central wastewater / sewer-source heat pump (Phase F)
+  /** Average wastewater source temperature at the building tap on a
+   *  `central_wastewater_hp` system. Varies by climate and building activity
+   *  (residential bias toward shower-heated water keeps the sewer warm).
+   *  Range 50–70°F; default 60°F. */
+  wastewaterSourceTempF: number;
+  /** Heat pump COP at the wastewater source temperature. Higher than air-
+   *  source HPWH because the source is warm + stable year-round. Range
+   *  3.0–6.0; default 4.5 reflects typical SHARC / Huber field data. */
+  wastewaterCOP: number;
+
   // In-unit electric resistance (DHW-only and combi variants)
   /** Selected per-unit electric resistance tank size (gal). Used by both
    *  `inunit_resistance` (DHW-only) and `inunit_combi_resistance` (DHW +
@@ -319,6 +356,12 @@ export const DEFAULT_INPUTS: DhwInputs = {
   inunitGasTanklessCombiInput: 199,
   inunitGasCombiBufferTankSize: 40,
   inunitResistanceTankSize: 50,
+  perFloorZoneCount: 4,
+  hrcCoolingTons: 50,
+  hrcYearRoundCoolingFraction: 0.6,
+  hrcCOPHeatRecovery: 4.0,
+  wastewaterSourceTempF: 60,
+  wastewaterCOP: 4.5,
   fixtureGPM: { ...DEFAULT_FIXTURE_GPM },
   preheat: "none",
   solarCollectorAreaSqft: 0,

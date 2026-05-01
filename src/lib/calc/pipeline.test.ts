@@ -38,6 +38,7 @@ describe("runCalc (integration)", () => {
       "central_gas", "central_gas_tankless", "central_indirect",
       "central_hybrid", "central_steam_hx",
       "central_resistance", "central_hpwh",
+      "central_per_floor", "central_hrc", "central_wastewater_hp",
       "inunit_gas_tank", "inunit_gas_tankless", "inunit_hpwh",
       "inunit_combi", "inunit_combi_gas",
       "inunit_combi_gas_tankless", "inunit_resistance", "inunit_combi_resistance",
@@ -364,6 +365,102 @@ describe("recirc control modes (Phase E)", () => {
     expect(r.recircControlMultiplier).toBeCloseTo(1.0, 4);
     expect(r.recircLossBTUH).toBeCloseTo(r.recircLossRawBTUH, 0);
     expect(r.recircLossSavingsBTUH).toBe(0);
+  });
+});
+
+describe("central_per_floor (Phase F)", () => {
+  it("computes per-zone kW + total installed kW, sane positive values", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "central_per_floor", perFloorZoneCount: 4 });
+    expect(r.totalBTUH).toBeGreaterThan(0);
+    expect(Number.isNaN(r.totalBTUH)).toBe(false);
+    expect(r.perFloorPerZoneKW).toBeGreaterThan(0);
+    expect(r.perFloorTotalInstalledKW).toBeGreaterThan(r.perFloorPerZoneKW);
+    expect(r.perFloorRecircLossReduction).toBeGreaterThan(0);
+    expect(r.autoSize?.recommended).toBeTruthy();
+    // Recirc loss is reduced vs single full-length loop (the system-specific
+    // invariant of per-floor decentralization)
+    expect(r.recircLossBTUH).toBeLessThan(r.recircLossRawBTUH);
+    // Pure-electric HPWH: kWh > 0 and reported in kWh.
+    expect(r.annualElectricKWh).toBeGreaterThan(0);
+    expect(r.monthly.monthlyUnit).toBe("kWh");
+  });
+
+  it("more zones means lower recirc loss (system-specific invariant)", () => {
+    const z2 = runCalc({ ...DEFAULT_INPUTS, systemType: "central_per_floor", perFloorZoneCount: 2 });
+    const z8 = runCalc({ ...DEFAULT_INPUTS, systemType: "central_per_floor", perFloorZoneCount: 8 });
+    expect(z8.recircLossBTUH).toBeLessThan(z2.recircLossBTUH);
+    expect(z8.perFloorRecircLossReduction).toBeGreaterThan(z2.perFloorRecircLossReduction);
+  });
+
+  it("does not leak per-floor fields onto unrelated systems", () => {
+    const gas = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    expect(gas.perFloorPerZoneKW).toBe(0);
+    expect(gas.perFloorTotalInstalledKW).toBe(0);
+    expect(gas.perFloorRecircLossReduction).toBe(0);
+  });
+});
+
+describe("central_hrc (Phase F)", () => {
+  it("computes capacity, coverage, both electric and gas annual streams", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "central_hrc" });
+    expect(r.totalBTUH).toBeGreaterThan(0);
+    expect(r.hrcCapacityBTUH).toBeGreaterThan(0);
+    expect(r.hrcAnnualContributionBTU).toBeGreaterThan(0);
+    expect(r.hrcCoverageFraction).toBeGreaterThan(0);
+    expect(r.hrcCoverageFraction).toBeLessThanOrEqual(1);
+    // Both electric (HRC) and gas (backup) streams are non-negative
+    expect(r.annualHPWHKWh_total).toBeGreaterThanOrEqual(0);
+    expect(r.annualGasTherms).toBeGreaterThanOrEqual(0);
+    expect(r.autoSize?.recommended).toBeTruthy();
+  });
+
+  it("higher year-round cooling fraction means more HRC coverage (system-specific invariant)", () => {
+    // Use a small cooling tonnage so the HRC capacity is the binding
+    // constraint — otherwise both runs cap at 100% coverage.
+    const lowYR = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_hrc",
+      hrcCoolingTons: 5,
+      hrcYearRoundCoolingFraction: 0.2,
+    });
+    const highYR = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_hrc",
+      hrcCoolingTons: 5,
+      hrcYearRoundCoolingFraction: 1.0,
+    });
+    expect(highYR.hrcCoverageFraction).toBeGreaterThan(lowYR.hrcCoverageFraction);
+    expect(highYR.annualGasTherms).toBeLessThan(lowYR.annualGasTherms);
+  });
+
+  it("does not leak HRC fields onto unrelated systems", () => {
+    const gas = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    expect(gas.hrcCapacityBTUH).toBe(0);
+    expect(gas.hrcAnnualContributionBTU).toBe(0);
+    expect(gas.hrcCoverageFraction).toBe(0);
+  });
+});
+
+describe("central_wastewater_hp (Phase F)", () => {
+  it("uses configured COP, no air-temp derate, pure-electric annual energy", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "central_wastewater_hp" });
+    expect(r.totalBTUH).toBeGreaterThan(0);
+    expect(r.wastewaterEffectiveCOP).toBeCloseTo(DEFAULT_INPUTS.wastewaterCOP, 2);
+    expect(r.annualGasTherms).toBe(0);
+    expect(r.annualElectricKWh).toBeGreaterThan(0);
+    expect(r.autoSize?.recommended).toBeTruthy();
+    expect(r.monthly.monthlyUnit).toBe("kWh");
+  });
+
+  it("higher wastewater COP means lower annual electric (system-specific invariant)", () => {
+    const lowCOP = runCalc({ ...DEFAULT_INPUTS, systemType: "central_wastewater_hp", wastewaterCOP: 3.0 });
+    const highCOP = runCalc({ ...DEFAULT_INPUTS, systemType: "central_wastewater_hp", wastewaterCOP: 6.0 });
+    expect(highCOP.annualHPWHKWh_total).toBeLessThan(lowCOP.annualHPWHKWh_total);
+  });
+
+  it("does not leak wastewater fields onto unrelated systems", () => {
+    const gas = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    expect(gas.wastewaterEffectiveCOP).toBe(0);
   });
 });
 

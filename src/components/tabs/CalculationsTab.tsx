@@ -43,6 +43,9 @@ export function CalculationsTab({ inputs, result }: Props) {
   const isCentralIndirect = inputs.systemType === "central_indirect";
   const isCentralHybrid = inputs.systemType === "central_hybrid";
   const isCentralSteamHX = inputs.systemType === "central_steam_hx";
+  const isCentralPerFloor = inputs.systemType === "central_per_floor";
+  const isCentralHRC = inputs.systemType === "central_hrc";
+  const isCentralWastewaterHP = inputs.systemType === "central_wastewater_hp";
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
@@ -545,6 +548,117 @@ export function CalculationsTab({ inputs, result }: Props) {
             </Prose>
           </>
         )}
+        {isCentralPerFloor && (
+          <>
+            <Prose>
+              Per-floor / per-stack systems decentralize the central plant into N
+              independent HPWH zones (one per floor or per riser). Each zone serves
+              `totalUnits / zoneCount` apartments through its own short recirc loop;
+              total summed recirc loss scales as ~1/zoneCount vs a single full-length
+              loop because the long building riser disappears.
+            </Prose>
+            <Formula>
+              zone_count = <Result>{inputs.perFloorZoneCount}</Result>
+            </Formula>
+            <Formula>
+              per_zone_BTUH = total_BTUH ÷ zone_count = {fmt(result.totalBTUH)} ÷{" "}
+              {inputs.perFloorZoneCount} ={" "}
+              <Result>{fmt(result.totalBTUH / inputs.perFloorZoneCount)}</Result> BTU/hr
+            </Formula>
+            <Formula>
+              per_zone_kW = (per_zone_BTUH ÷ 3412) ÷ COP ÷ cap_factor ={" "}
+              <Result>{fmt(result.perFloorPerZoneKW, 1)}</Result> kW (snapped to ladder)
+            </Formula>
+            <Formula>
+              total_installed_kW = per_zone_kW × zone_count ={" "}
+              <Result>{fmt(result.perFloorTotalInstalledKW, 1)}</Result> kW
+            </Formula>
+            <Formula>
+              recirc_loss_savings = continuous_loss × (1 − 1/zone_count) ={" "}
+              <Result>{fmt(result.perFloorRecircLossReduction)}</Result> BTU/hr (vs single full loop)
+            </Formula>
+            <Prose>
+              Annual energy uses the same HPWH compressor physics as a single central
+              plant — savings come entirely from the reduced recirc loop loss.
+            </Prose>
+          </>
+        )}
+        {isCentralHRC && (
+          <>
+            <Prose>
+              Heat-recovery chiller integration captures the building cooling system&apos;s
+              condenser reject heat for DHW preheating. Available HR capacity scales with
+              cooling tonnage × year-round fraction × the COP/(COP-1) heat-rejection
+              ratio. Backup gas covers any annual shortfall after applying a utilization
+              factor (cooling/DHW timing mismatch).
+            </Prose>
+            <Formula>
+              hrc_capacity_BTUH = tons × 12,000 × yr_round × COP ÷ (COP − 1) ={" "}
+              {fmt(inputs.hrcCoolingTons)} × 12000 × {inputs.hrcYearRoundCoolingFraction.toFixed(2)} ×{" "}
+              {inputs.hrcCOPHeatRecovery.toFixed(2)} ÷ {(inputs.hrcCOPHeatRecovery - 1).toFixed(2)} ={" "}
+              <Result>{fmt(result.hrcCapacityBTUH)}</Result> BTU/hr
+            </Formula>
+            <Formula>
+              hrc_max_annual_BTU = capacity × 8760 × utilization (0.70) ={" "}
+              <Result>{fmt(result.hrcCapacityBTUH * 8760 * 0.70)}</Result> BTU/yr
+            </Formula>
+            <Formula>
+              hrc_contribution_BTU = min(annual_total_BTU, hrc_max_annual_BTU) ={" "}
+              <Result>{fmt(result.hrcAnnualContributionBTU)}</Result> BTU/yr
+            </Formula>
+            <Formula>
+              coverage_fraction = hrc_contribution ÷ annual_total ={" "}
+              <Result>{(result.hrcCoverageFraction * 100).toFixed(1)}%</Result>
+            </Formula>
+            <Formula>
+              backup_gas_therms = (annual_total − hrc_contribution) ÷ (gas_η × 100,000) ={" "}
+              <Result>{fmt(result.annualGasTherms)}</Result> therms
+            </Formula>
+            <Formula>
+              hrc_electric_kWh = hrc_contribution ÷ 3412 ÷ HR-mode_COP ={" "}
+              <Result>{fmt(result.annualHPWHKWh_total)}</Result> kWh
+            </Formula>
+            <Prose>
+              The HRC&apos;s &quot;free&quot; heat is the rejected condenser energy that
+              would otherwise dump outdoors; the chiller&apos;s incremental compressor work
+              to deliver useful heat at potable-side setpoint IS counted in the electric
+              total. ASHRAE 90.1-2022 §6.5.6 mandates heat recovery in many large
+              facilities with year-round simultaneous heating + cooling.
+            </Prose>
+          </>
+        )}
+        {isCentralWastewaterHP && (
+          <>
+            <Prose>
+              Sewer-source heat pumps use raw wastewater as the thermal source. The
+              source temperature stays in the 55–65°F range year-round (residential
+              shower-heated runoff), giving much higher COP than air-source HPWHs in
+              cold climates. No air-temp-driven capacity derate.
+            </Prose>
+            <Formula>
+              source_temp = <Result>{inputs.wastewaterSourceTempF}</Result>°F (constant)
+            </Formula>
+            <Formula>
+              effective_COP = <Result>{result.wastewaterEffectiveCOP.toFixed(2)}</Result>{" "}
+              (from spec; bounded 3.0–6.0)
+            </Formula>
+            <Formula>
+              hpwh_nameplate_kW = total_BTUH ÷ 3412 ÷ COP = {fmt(result.totalBTUH)} ÷ 3412 ÷{" "}
+              {result.wastewaterEffectiveCOP.toFixed(2)} ={" "}
+              <Result>{fmt(result.totalKW / result.wastewaterEffectiveCOP, 1)}</Result> kW
+            </Formula>
+            <Formula>
+              annual_kWh = annual_total_BTU ÷ 3412 ÷ COP ={" "}
+              <Result>{fmt(result.annualHPWHKWh_total)}</Result> kWh
+            </Formula>
+            <Prose>
+              Capex is ~2× standard HPWH because the sewer-side HX must handle raw
+              sewage (screening, biofouling mitigation). Real installations:
+              SHARC International False Creek (Vancouver), Hudson Yards (NYC),
+              Goodwill HQ (Seattle).
+            </Prose>
+          </>
+        )}
         {inputs.systemType === "central_resistance" && (
           <>
             <Prose>Resistance converts 1:1 — no efficiency derate needed.</Prose>
@@ -1037,6 +1151,33 @@ export function CalculationsTab({ inputs, result }: Props) {
             <Result>{fmt(result.annualHPWHKWh_total)}</Result> kWh (annualCOP ={" "}
             {result.annualCOP.toFixed(2)}) · cost{" "}
             <Result>{fmtUSD(result.annualHPWHCost)}</Result>
+          </Formula>
+        )}
+        {isCentralPerFloor && (
+          <Formula>
+            kWh = total_BTU (with reduced recirc) ÷ 3412 ÷ annualCOP ={" "}
+            <Result>{fmt(result.annualHPWHKWh_total)}</Result> kWh · cost{" "}
+            <Result>{fmtUSD(result.annualHPWHCost)}</Result>
+          </Formula>
+        )}
+        {isCentralHRC && (
+          <>
+            <Formula>
+              hrc_kWh = hrc_contribution_BTU ÷ 3412 ÷ HR_COP ={" "}
+              <Result>{fmt(result.annualHPWHKWh_total)}</Result> kWh · cost{" "}
+              <Result>{fmtUSD(result.annualHPWHCost)}</Result>
+            </Formula>
+            <Formula>
+              gas_backup_therms = backup_BTU ÷ (gas_η × 100,000) ={" "}
+              <Result>{fmt(result.annualGasTherms)}</Result> therms · cost{" "}
+              <Result>{fmtUSD(result.annualGasCost)}</Result>
+            </Formula>
+          </>
+        )}
+        {isCentralWastewaterHP && (
+          <Formula>
+            kWh = total_BTU ÷ 3412 ÷ wastewater_COP = {fmt(result.annualHPWHKWh_total)} kWh ·{" "}
+            <Result>cost {fmtUSD(result.annualHPWHCost)}</Result>
           </Formula>
         )}
         {(isGasTank || isGasCombi) && (

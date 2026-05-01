@@ -25,6 +25,12 @@ const BEST_FOR: Record<SystemTypeKey, string> = {
     "Rare new install. Mostly used as redundant peaking or where HPWH is infeasible (no mech-room ventilation, etc.).",
   central_hpwh:
     "Default electrification path when mech-room ambient is favorable (annual avg > 50°F).",
+  central_per_floor:
+    "Mid-rise (4-12 stories) where a single central plant has too much recirc loop and full in-unit takes too much closet space.",
+  central_hrc:
+    "Mixed-use buildings with year-round cooling load (data centers, retail, hotels). Captures rejected condenser heat that would otherwise dump outside.",
+  central_wastewater_hp:
+    "Large all-electric MF where sewer access is feasible. Source temp ~60°F year-round gives much higher COP than air-source HPWH in cold climates.",
   central_gas_tankless:
     "Mid-rise where mech-room space is tight and modulating turndown matters more than storage buffering.",
   central_indirect:

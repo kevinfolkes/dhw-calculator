@@ -312,6 +312,199 @@ export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
     };
   }
 
+  // ---------- CENTRAL PER-FLOOR HPWH (decentralized) ---------------------
+  // One HPWH plant per floor / per stack. Each zone is sized for its share
+  // of the design BTU/hr, then snapped to the standard CENTRAL_HPWH_KW
+  // ladder. Total installed kW = perZoneKW × zoneCount. Storage gallons
+  // are also per-zone (each zone has its own short loop and tank).
+  if (st === "central_per_floor") {
+    const zoneCount = Math.max(1, Math.min(20, Math.floor(input.perFloorZoneCount)));
+    const perZoneKWreq = ctx.hpwhNameplateKW / zoneCount;
+    const perZoneStorageGal_min = Math.ceil(
+      ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction / zoneCount / 50,
+    ) * 50;
+    const perZoneStorageGal_rec = Math.ceil(
+      ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction * 1.25 / zoneCount / 50,
+    ) * 50;
+    const minTank = CENTRAL_TANK_SIZES.find(s => s >= perZoneStorageGal_min) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const recTank = CENTRAL_TANK_SIZES.find(s => s >= perZoneStorageGal_rec) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const minPerZoneKW = CENTRAL_HPWH_KW.find(k => k >= perZoneKWreq) ?? CENTRAL_HPWH_KW[CENTRAL_HPWH_KW.length - 1];
+    const recPerZoneKW = CENTRAL_HPWH_KW.find(k => k >= perZoneKWreq * 1.25) ?? CENTRAL_HPWH_KW[CENTRAL_HPWH_KW.length - 1];
+
+    let best: (SizingRec & { tank: number; cap: number; capUnit: string; cap2: number; cap2Unit: string }) | null = null;
+    for (const tank of CENTRAL_TANK_SIZES) {
+      if (tank < minTank) continue;
+      if (tank > recTank * 2) continue;
+      const size: InstalledCostParams = { storageGal: tank, kW: recPerZoneKW };
+      // Per-zone cost × zoneCount.
+      const capCost = ic(size) * zoneCount;
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) {
+        best = {
+          tank,
+          cap: recPerZoneKW,
+          capUnit: "kW per zone",
+          cap2: zoneCount,
+          cap2Unit: "zones",
+          capCost,
+          annCost,
+          total15,
+        };
+      }
+    }
+
+    const minSize: InstalledCostParams = { storageGal: minTank, kW: minPerZoneKW };
+    const recSize: InstalledCostParams = { storageGal: recTank, kW: recPerZoneKW };
+
+    return {
+      system: st,
+      reqPeakHourGPH: ctx.peakHourDemand,
+      reqOutputMBH: ctx.totalBTUH / 1000,
+      reqOutputKW: ctx.totalKW,
+      minimum: {
+        tank: minTank,
+        cap: minPerZoneKW,
+        capUnit: "kW per zone",
+        cap2: zoneCount,
+        cap2Unit: "zones",
+        capCost: ic(minSize) * zoneCount,
+        annCost: annualCostForSize(minSize),
+      },
+      recommended: {
+        tank: recTank,
+        cap: recPerZoneKW,
+        capUnit: "kW per zone",
+        cap2: zoneCount,
+        cap2Unit: "zones",
+        capCost: ic(recSize) * zoneCount,
+        annCost: annualCostForSize(recSize),
+      },
+      lifecycle: best,
+    };
+  }
+
+  // ---------- CENTRAL HRC (heat-recovery chiller integration) ------------
+  // Sized for the gas backup that covers any DHW shortfall after HRC
+  // contribution. Storage mirrors central_gas. Cap field shows the gas
+  // backup MBH; cap2 shows the cooling tonnage (informational — the
+  // chiller itself is out of scope for this calculator). HRC integration
+  // adds a fixed base cost + per-cooling-ton premium handled in cost model.
+  if (st === "central_hrc") {
+    const minStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction / 50) * 50;
+    const recStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction * 1.25 / 50) * 50;
+
+    const minTank = CENTRAL_TANK_SIZES.find(s => s >= minStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const recTank = CENTRAL_TANK_SIZES.find(s => s >= recStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+
+    // Backup gas MBH covers the shortfall (1 - HRC coverage fraction).
+    // Use ctx.totalBTUH as the design load; the HRC's nominal HR capacity
+    // sits on top of the chiller's cooling sizing (out of scope here).
+    const safeCOP = Math.min(6.0, Math.max(2.5, input.hrcCOPHeatRecovery));
+    const safeYR = Math.min(1.0, Math.max(0.0, input.hrcYearRoundCoolingFraction));
+    const safeTons = Math.max(0, input.hrcCoolingTons);
+    const hrcCapBTUH = safeTons * 12000 * safeYR * (safeCOP / Math.max(1.001, safeCOP - 1));
+    const shortfallBTUH = Math.max(0, ctx.totalBTUH - hrcCapBTUH);
+    const minBackupMBH = (shortfallBTUH / Math.max(0.5, input.gasEfficiency)) / 1000;
+    const recBackupMBH = minBackupMBH * 1.25;
+    const minCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= minBackupMBH) ?? CENTRAL_GAS_INPUT_MBH[0];
+    const recCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= recBackupMBH) ?? CENTRAL_GAS_INPUT_MBH[0];
+
+    let best: (SizingRec & { tank: number; cap: number; capUnit: string; cap2: number; cap2Unit: string }) | null = null;
+    for (const tank of CENTRAL_TANK_SIZES) {
+      if (tank < minTank) continue;
+      if (tank > recTank * 2) continue;
+      const size: InstalledCostParams = { storageGal: tank, inputMBH: recCap, kW: safeTons };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) {
+        best = {
+          tank,
+          cap: recCap,
+          capUnit: "MBH gas backup",
+          cap2: safeTons,
+          cap2Unit: "cooling tons",
+          capCost,
+          annCost,
+          total15,
+        };
+      }
+    }
+
+    const minSize: InstalledCostParams = { storageGal: minTank, inputMBH: minCap, kW: safeTons };
+    const recSize: InstalledCostParams = { storageGal: recTank, inputMBH: recCap, kW: safeTons };
+
+    return {
+      system: st,
+      reqPeakHourGPH: ctx.peakHourDemand,
+      reqOutputMBH: ctx.totalBTUH / 1000,
+      reqOutputKW: ctx.totalKW,
+      minimum: {
+        tank: minTank,
+        cap: minCap,
+        capUnit: "MBH gas backup",
+        cap2: safeTons,
+        cap2Unit: "cooling tons",
+        capCost: ic(minSize),
+        annCost: annualCostForSize(minSize),
+      },
+      recommended: {
+        tank: recTank,
+        cap: recCap,
+        capUnit: "MBH gas backup",
+        cap2: safeTons,
+        cap2Unit: "cooling tons",
+        capCost: ic(recSize),
+        annCost: annualCostForSize(recSize),
+      },
+      lifecycle: best,
+    };
+  }
+
+  // ---------- CENTRAL WASTEWATER HP (sewer-source) -----------------------
+  // Mirrors central_hpwh shape: storage tank ladder + HPWH kW from the
+  // CENTRAL_HPWH_KW ladder. The COP is the user-configured wastewater COP
+  // (constant year-round source temp), so no air-temp derate.
+  if (st === "central_wastewater_hp") {
+    const minStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction / 50) * 50;
+    const recStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction * 1.25 / 50) * 50;
+    const minTank = CENTRAL_TANK_SIZES.find(s => s >= minStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const recTank = CENTRAL_TANK_SIZES.find(s => s >= recStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+
+    const safeCOP = Math.min(6.0, Math.max(3.0, input.wastewaterCOP));
+    const minKW = ctx.totalKW / safeCOP;
+    const recKW = minKW * 1.25;
+    const minCap = CENTRAL_HPWH_KW.find(k => k >= minKW) ?? CENTRAL_HPWH_KW[CENTRAL_HPWH_KW.length - 1];
+    const recCap = CENTRAL_HPWH_KW.find(k => k >= recKW) ?? CENTRAL_HPWH_KW[CENTRAL_HPWH_KW.length - 1];
+
+    let best: (SizingRec & { tank: number; cap: number; capUnit: string }) | null = null;
+    for (const tank of CENTRAL_TANK_SIZES) {
+      if (tank < minTank) continue;
+      if (tank > recTank * 2) continue;
+      const size: InstalledCostParams = { storageGal: tank, kW: recCap };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) {
+        best = { tank, cap: recCap, capUnit: "kW nameplate", capCost, annCost, total15 };
+      }
+    }
+
+    const minSize: InstalledCostParams = { storageGal: minTank, kW: minCap };
+    const recSize: InstalledCostParams = { storageGal: recTank, kW: recCap };
+
+    return {
+      system: st,
+      reqPeakHourGPH: ctx.peakHourDemand,
+      reqOutputMBH: ctx.totalBTUH / 1000,
+      reqOutputKW: ctx.totalKW,
+      minimum: { tank: minTank, cap: minCap, capUnit: "kW nameplate", capCost: ic(minSize), annCost: annualCostForSize(minSize) },
+      recommended: { tank: recTank, cap: recCap, capUnit: "kW nameplate", capCost: ic(recSize), annCost: annualCostForSize(recSize) },
+      lifecycle: best,
+    };
+  }
+
   // ---------- CENTRAL STEAM-TO-DHW HX (steam + indirect tank) ------------
   // Same shape as central_indirect but the upstream efficiency is the
   // combined steam-source × HX effectiveness, not gas burner efficiency.
@@ -706,6 +899,30 @@ function annualCostForSizeImpl(ctx: AutoSizeContext, size: InstalledCostParams):
     const storageGal = size.storageGal ?? ctx.storageVolGal_nominal;
     const sizeCOP = ctx.annualCOP * (1 + Math.min(0.05, (storageGal - ctx.storageVolGal_nominal) / 10000));
     return ((ctx.annualTotalBTU / 3412) / sizeCOP) * input.elecRate;
+  }
+  if (st === "central_per_floor") {
+    // Same compressor physics as central_hpwh; recirc savings already
+    // baked into ctx.annualTotalBTU upstream via the reduced recircLossBTUH.
+    return ((ctx.annualTotalBTU / 3412) / ctx.annualCOP) * input.elecRate;
+  }
+  if (st === "central_hrc") {
+    // Split annual BTU between HRC contribution (electric at HR-mode COP)
+    // and gas backup (therms at gasEfficiency).
+    const safeCOP = Math.min(6.0, Math.max(2.5, input.hrcCOPHeatRecovery));
+    const safeYR = Math.min(1.0, Math.max(0.0, input.hrcYearRoundCoolingFraction));
+    const safeTons = Math.max(0, input.hrcCoolingTons);
+    const hrcCapBTUH = safeTons * 12000 * safeYR * (safeCOP / Math.max(1.001, safeCOP - 1));
+    // utilization factor 0.70 to mirror pipeline's HRC_UTILIZATION_FACTOR.
+    const hrcMaxAnnualBTU = hrcCapBTUH * 8760 * 0.70;
+    const hrcContribBTU = Math.min(ctx.annualTotalBTU, hrcMaxAnnualBTU);
+    const backupBTU = Math.max(0, ctx.annualTotalBTU - hrcContribBTU);
+    const hrcKWh = hrcContribBTU / 3412 / safeCOP;
+    const backupTherms = backupBTU / (input.gasEfficiency * 100000);
+    return hrcKWh * input.elecRate + backupTherms * input.gasRate;
+  }
+  if (st === "central_wastewater_hp") {
+    const safeCOP = Math.min(6.0, Math.max(3.0, input.wastewaterCOP));
+    return ((ctx.annualTotalBTU / 3412) / safeCOP) * input.elecRate;
   }
   if (st === "inunit_gas_tank") {
     const tankGal = size.tankGal as GasTankSize;

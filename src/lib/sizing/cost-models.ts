@@ -94,6 +94,30 @@ export function installedCost(
   if (systemType === "central_hpwh") {
     return 40000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
   }
+  if (systemType === "central_per_floor") {
+    // Per-zone HPWH: lower base (~$15k vs $40k) per zone, scaled. Caller
+    // multiplies this by zoneCount in the auto-sizer to get total plant
+    // cost. Per-zone cost = base + per-zone storage gal × $10 + per-zone
+    // kW × $800 (matches central_hpwh per-kW / per-gal scaling).
+    return 15000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
+  }
+  if (systemType === "central_hrc") {
+    // Heat-recovery integration cost (the chiller itself is out of scope).
+    // $25,000 base + $200/cooling-ton (in `kW` field as a tonnage proxy)
+    // + storage tank + gas backup boiler equivalent. The chiller's cooling
+    // capex would belong in a separate cooling load model.
+    const tons = params.kW ?? 0;
+    const integration = 25000 + tons * 200;
+    const storage = (params.storageGal ?? 0) * 8;
+    const backup = (params.inputMBH ?? 0) * 12;
+    return integration + storage + backup;
+  }
+  if (systemType === "central_wastewater_hp") {
+    // Wastewater heat pumps are expensive — sewage HX, screening, biofouling
+    // mitigation. $80,000 base + $1,200/kW + $10/storage gal — about 2× a
+    // standard central_hpwh.
+    return 80000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 1200;
+  }
   if (systemType === "inunit_gas_tank") {
     const perUnit = params.subtype === "condensing"
       ? 1800 + (params.tankGal ?? 0) * 15

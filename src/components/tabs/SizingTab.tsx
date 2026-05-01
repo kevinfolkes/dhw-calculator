@@ -19,6 +19,11 @@ export function SizingTab({ result }: { result: CalcResult }) {
   // `steamCombinedEfficiency` for unrelated system types.
   const isCentralHybrid = result.hybridHpwhBTUH > 0;
   const isCentralSteamHX = result.steamCombinedEfficiency > 0;
+  // Phase F detection — surfaces only when the matching system type is
+  // active (pipeline zeroes these for unrelated systems).
+  const isCentralPerFloor = result.perFloorPerZoneKW > 0;
+  const isCentralHRC = result.hrcCapacityBTUH > 0;
+  const isCentralWastewaterHP = result.wastewaterEffectiveCOP > 0;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {isCentralHybrid && (
@@ -47,6 +52,99 @@ export function SizingTab({ result }: { result: CalcResult }) {
               unit="MBH"
               sub="output ÷ gas efficiency"
               accent="#F59E0B"
+            />
+          </Grid>
+        </Card>
+      )}
+
+      {isCentralPerFloor && (
+        <Card accent="#9bd3a8">
+          <CardHeader>
+            <CardTitle>Per-Floor / Per-Stack Zoning</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard
+              label="Per-zone HPWH"
+              value={fmt(result.perFloorPerZoneKW, 1)}
+              unit="kW"
+              sub="each zone independently"
+              accent="#9bd3a8"
+            />
+            <MetricCard
+              label="Total installed"
+              value={fmt(result.perFloorTotalInstalledKW, 1)}
+              unit="kW"
+              sub="per-zone × zone count"
+              accent="#9bd3a8"
+            />
+            <MetricCard
+              label="Recirc loss reduction"
+              value={fmt(result.perFloorRecircLossReduction)}
+              unit="BTU/hr"
+              sub="vs single full-length loop"
+              accent="var(--accent-emerald)"
+            />
+          </Grid>
+        </Card>
+      )}
+
+      {isCentralHRC && (
+        <Card accent="#7dc7d3">
+          <CardHeader>
+            <CardTitle>Heat-Recovery Chiller Coverage</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard
+              label="HRC capacity"
+              value={fmt(result.hrcCapacityBTUH / 1000, 1)}
+              unit="MBH"
+              sub="cooling tons × COP/(COP-1) × yr-round fraction"
+              accent="#7dc7d3"
+            />
+            <MetricCard
+              label="Annual coverage"
+              value={`${(result.hrcCoverageFraction * 100).toFixed(0)}%`}
+              sub={`${fmt(result.hrcAnnualContributionBTU / 1000000, 1)} MBTU/yr captured`}
+              accent="#7dc7d3"
+            />
+            <MetricCard
+              label="Gas backup"
+              value={result.hrcCoverageFraction >= 0.999 ? "none" : "required"}
+              sub={
+                result.hrcCoverageFraction >= 0.999
+                  ? "HRC fully covers DHW"
+                  : `covers remaining ${((1 - result.hrcCoverageFraction) * 100).toFixed(0)}%`
+              }
+              accent={result.hrcCoverageFraction >= 0.999 ? "var(--accent-emerald)" : "var(--accent-amber)"}
+            />
+          </Grid>
+        </Card>
+      )}
+
+      {isCentralWastewaterHP && (
+        <Card accent="#5fa8b8">
+          <CardHeader>
+            <CardTitle>Wastewater HPWH Sizing</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard
+              label="Source-temp COP"
+              value={result.wastewaterEffectiveCOP.toFixed(2)}
+              sub="constant year-round (sewer)"
+              accent="#5fa8b8"
+            />
+            <MetricCard
+              label="HPWH nameplate"
+              value={fmt(result.totalKW / result.wastewaterEffectiveCOP, 1)}
+              unit="kW"
+              sub="totalBTUH ÷ 3412 ÷ COP (no air-temp derate)"
+              accent="#5fa8b8"
+            />
+            <MetricCard
+              label="vs air-source HPWH"
+              value={`${((result.wastewaterEffectiveCOP / Math.max(0.5, result.cop) - 1) * 100).toFixed(0)}%`}
+              sub="COP advantage at design"
+              accent="var(--accent-emerald)"
             />
           </Grid>
         </Card>

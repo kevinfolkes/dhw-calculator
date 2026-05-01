@@ -223,6 +223,9 @@ export function CurrentDesignTab({ inputs, result }: Props) {
   const isCentralIndirect = inputs.systemType === "central_indirect";
   const isCentralHybrid = inputs.systemType === "central_hybrid";
   const isCentralSteamHX = inputs.systemType === "central_steam_hx";
+  const isCentralPerFloor = inputs.systemType === "central_per_floor";
+  const isCentralHRC = inputs.systemType === "central_hrc";
+  const isCentralWastewaterHP = inputs.systemType === "central_wastewater_hp";
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
@@ -664,6 +667,88 @@ export function CurrentDesignTab({ inputs, result }: Props) {
               unit={inputs.swingTankEnabled ? "kW" : undefined}
               sub={inputs.swingTankEnabled ? "recirc + Legionella" : "no resistance backup for recirc"}
               accent={A_HPWH}
+            />
+          </Grid>
+        )}
+
+        {isCentral && isCentralPerFloor && (
+          <Grid cols={3}>
+            <MetricCard
+              label={`${inputs.perFloorZoneCount} zones`}
+              value={fmt(result.perFloorPerZoneKW, 1)}
+              unit="kW per zone"
+              sub={`${fmt(result.perFloorTotalInstalledKW, 1)} kW total installed`}
+              accent="#9bd3a8"
+            />
+            <MetricCard
+              label="Effective COP"
+              value={result.cop.toFixed(2)}
+              sub={`${inputs.hpwhRefrigerant} @ ${result.effectiveHpwhAmbient.toFixed(0)}°F ambient`}
+              accent="#9bd3a8"
+            />
+            <MetricCard
+              label="Recirc savings"
+              value={fmt(result.perFloorRecircLossReduction)}
+              unit="BTU/hr"
+              sub="vs single full-length loop"
+              accent={A_OK}
+            />
+          </Grid>
+        )}
+
+        {isCentral && isCentralHRC && (
+          <Grid cols={3}>
+            <MetricCard
+              label="HRC capacity"
+              value={fmt(result.hrcCapacityBTUH / 1000, 1)}
+              unit="MBH"
+              sub={`${inputs.hrcCoolingTons} tons · ${(inputs.hrcYearRoundCoolingFraction * 100).toFixed(0)}% yr-round`}
+              accent="#7dc7d3"
+            />
+            <MetricCard
+              label="DHW coverage"
+              value={`${(result.hrcCoverageFraction * 100).toFixed(0)}%`}
+              sub={`HR-mode COP ${inputs.hrcCOPHeatRecovery.toFixed(1)}`}
+              accent="#7dc7d3"
+            />
+            <MetricCard
+              label="Spec reality check"
+              value=""
+              sub={
+                <StatusBadge
+                  ok={result.hrcCoverageFraction > 0}
+                  text={
+                    result.hrcCoverageFraction >= 0.999
+                      ? "fully covered by HRC"
+                      : `gas backup covers ${((1 - result.hrcCoverageFraction) * 100).toFixed(0)}%`
+                  }
+                />
+              }
+              accent={result.hrcCoverageFraction > 0 ? A_OK : A_BAD}
+            />
+          </Grid>
+        )}
+
+        {isCentral && isCentralWastewaterHP && (
+          <Grid cols={3}>
+            <MetricCard
+              label="Source-temp COP"
+              value={result.wastewaterEffectiveCOP.toFixed(2)}
+              sub={`${inputs.wastewaterSourceTempF}°F sewer source`}
+              accent="#5fa8b8"
+            />
+            <MetricCard
+              label="HPWH nameplate"
+              value={fmt(result.totalKW / result.wastewaterEffectiveCOP, 1)}
+              unit="kW"
+              sub="no air-ambient capacity derate"
+              accent="#5fa8b8"
+            />
+            <MetricCard
+              label="vs air-source baseline"
+              value={`+${((result.wastewaterEffectiveCOP / Math.max(0.5, result.cop) - 1) * 100).toFixed(0)}%`}
+              sub="COP advantage from stable warm source"
+              accent={A_OK}
             />
           </Grid>
         )}
@@ -1264,6 +1349,77 @@ export function CurrentDesignTab({ inputs, result }: Props) {
                 value={result.annualCOP.toFixed(2)}
                 sub="climate-weighted"
                 accent={A_HPWH}
+              />
+            </>
+          )}
+          {isCentral && isCentralPerFloor && (
+            <>
+              <MetricCard
+                label="Annual electric"
+                value={fmtUSD(result.annualHPWHCost)}
+                unit="/yr"
+                sub={`${fmt(result.annualHPWHKWh_total)} kWh · ${inputs.perFloorZoneCount} zones`}
+                accent="#9bd3a8"
+              />
+              <MetricCard
+                label="Annual carbon"
+                value={fmt(result.annualHPWHCarbon)}
+                unit="lb CO₂"
+                accent="#9bd3a8"
+              />
+              <MetricCard
+                label="Annual COP"
+                value={result.annualCOP.toFixed(2)}
+                sub="climate-weighted (same physics as central HPWH)"
+                accent="#9bd3a8"
+              />
+            </>
+          )}
+          {isCentral && isCentralHRC && (
+            <>
+              <MetricCard
+                label="Annual electric (HRC)"
+                value={fmtUSD(result.annualHPWHCost)}
+                unit="/yr"
+                sub={`${fmt(result.annualHPWHKWh_total)} kWh · ${(result.hrcCoverageFraction * 100).toFixed(0)}% coverage`}
+                accent="#7dc7d3"
+              />
+              <MetricCard
+                label="Annual gas (backup)"
+                value={fmtUSD(result.annualGasCost)}
+                unit="/yr"
+                sub={`${fmt(result.annualGasTherms)} therms · backup share`}
+                accent={A_GAS}
+              />
+              <MetricCard
+                label="Annual carbon (combined)"
+                value={fmt(result.annualGasCarbon + result.annualHPWHCarbon)}
+                unit="lb CO₂"
+                sub={`gas ${fmt(result.annualGasCarbon)} + electric ${fmt(result.annualHPWHCarbon)}`}
+                accent="#7dc7d3"
+              />
+            </>
+          )}
+          {isCentral && isCentralWastewaterHP && (
+            <>
+              <MetricCard
+                label="Annual electric"
+                value={fmtUSD(result.annualHPWHCost)}
+                unit="/yr"
+                sub={`${fmt(result.annualHPWHKWh_total)} kWh`}
+                accent="#5fa8b8"
+              />
+              <MetricCard
+                label="Annual carbon"
+                value={fmt(result.annualHPWHCarbon)}
+                unit="lb CO₂"
+                accent="#5fa8b8"
+              />
+              <MetricCard
+                label="Source-temp COP"
+                value={result.wastewaterEffectiveCOP.toFixed(2)}
+                sub="constant year-round (sewer)"
+                accent="#5fa8b8"
               />
             </>
           )}

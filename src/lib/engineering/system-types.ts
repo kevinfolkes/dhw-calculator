@@ -15,6 +15,9 @@ export type SystemTypeKey =
   | "central_steam_hx"
   | "central_resistance"
   | "central_hpwh"
+  | "central_per_floor"
+  | "central_hrc"
+  | "central_wastewater_hp"
   | "inunit_gas_tank"
   | "inunit_gas_tankless"
   | "inunit_hpwh"
@@ -123,6 +126,42 @@ export const SYSTEM_TYPES: Record<SystemTypeKey, SystemTypeDef> = {
       "All-electric central plant. Heat pump water heaters with primary storage and optional swing tank for recirc/Legionella. Most common electrification retrofit approach.",
     archetypes: "Colmac CxA/CxV (HFC), SANCO2 (CO2), Mitsubishi QAHV (CO2), Aermec, Nyle",
     color: "#7dd3a3",
+  },
+  central_per_floor: {
+    label: "Central HPWH per Floor (decentralized) + Short Recirc Loops",
+    short: "Per-Floor HPWH",
+    topology: "central",
+    tech: "hpwh",
+    hasRecirc: true,
+    hasSpaceHeating: false,
+    description:
+      "Decentralized HPWH plant — one HPWH per floor (or per riser/stack) with its own short recirc loop. Mid-tier between full-central and full-in-unit: cuts recirc losses substantially because each loop is ~1/N the length, but keeps professional maintenance and Legionella control.",
+    archetypes: "Mitsubishi QAHV per floor, Colmac CxA per stack, Aermec WRL per riser, SANCO2 per stack",
+    color: "#9bd3a8",
+  },
+  central_hrc: {
+    label: "Central HRC (heat-recovery chiller) + Backup",
+    short: "Heat-Recovery Chiller",
+    topology: "central",
+    tech: "hpwh",
+    hasRecirc: true,
+    hasSpaceHeating: false,
+    description:
+      "Building cooling-system condenser reject heat is routed to DHW preheating instead of dumped outdoors. Year-round cooling load (data center, retail, mixed-use) provides 'free' heat; HRC unit is sized for cooling first, with DHW recovery as a byproduct. Condensing gas backup covers any shortfall.",
+    archetypes: "Trane CenTraVac with hot-water condenser, Carrier AquaForce 30XV, York YK heat-recovery, Multistack TS",
+    color: "#7dc7d3",
+  },
+  central_wastewater_hp: {
+    label: "Central Sewer-Source HPWH + Recirc",
+    short: "Wastewater HPWH",
+    topology: "central",
+    tech: "hpwh",
+    hasRecirc: true,
+    hasSpaceHeating: false,
+    description:
+      "Heat pump using sewer/wastewater as a constant-temperature source (~55–65°F year-round). Stable warm source gives much higher COP than air-source HPWH, especially in cold climates. Real installations: Vancouver False Creek, NYC Hudson Yards, Seattle Goodwill HQ.",
+    archetypes: "SHARC International Piranha, Huber ThermWin, Lynx Heat Recovery, Therma-Stor Hydraflo",
+    color: "#5fa8b8",
   },
   inunit_gas_tank: {
     label: "In-Unit Gas Tank (atmospheric or condensing)",
