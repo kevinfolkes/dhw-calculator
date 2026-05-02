@@ -619,6 +619,11 @@ const SIZED_VARIABLES: Record<SystemTypeKey, SizedVariable[]> = {
     { label: "Storage tank (gal)", detail: "Standard central tank ladder, sized for peak-hour buffer.", constraint: "peak_hour × 1.25 ÷ 0.75" },
     { label: "HPWH nameplate (kW)", detail: "From the standard CENTRAL_HPWH_KW ladder. Source temp is stable year-round so no air-ambient capacity derate.", constraint: "total_kW ÷ wastewaterCOP" },
   ],
+  central_chp: [
+    { label: "Storage tank (gal)", detail: "Standard central tank ladder, sized for peak-hour buffer.", constraint: "peak_hour × 1.25 ÷ 0.75" },
+    { label: "CHP electric output (kW)", detail: "Two SKU sizes: 35 kW (small reciprocating engine — Yanmar CP35D, Aisin GECC60A2) or 75 kW (Capstone C65 ICHP, Honda MCHP, Tecogen Inverde 75). User-selected on the Building tab; auto-sizer respects the choice.", constraint: "user-selected (35 or 75 kW)" },
+    { label: "Backup gas boiler (MBH)", detail: "Covers peak-hour shortfall after CHP recovered heat. From the standard central gas MBH ladder, sized for the design BTU/hr minus chpHeatRecoveryBTUH.", constraint: "(total_BTUH − chp_recovery_BTUH) ÷ gas_η" },
+  ],
   inunit_gas_tank: [
     { label: "Per-unit tank (gal)", detail: "40 / 50 / 75 / 100 gal, sized to meet FHR.", constraint: "FHR ≥ peak_hour_per_apt" },
     { label: "Efficiency tier", detail: "Condensing (UEF 0.80–0.96, PVC direct-vent) vs non-condensing (UEF 0.60–0.70, Cat I atmospheric or Cat III power-vent). Federal UEF 0.81+ restricts atmospheric ≥50 gal for new construction." },
@@ -682,6 +687,7 @@ function recommendedMarginLabel(st: SystemTypeKey): string {
     case "central_per_floor": return "+25% per-zone kW";
     case "central_hrc": return "+25% backup MBH";
     case "central_wastewater_hp": return "+25% nameplate";
+    case "central_chp": return "+25% backup MBH (CHP fixed at user SKU)";
     case "inunit_gas_tank": return "+15% FHR";
     case "inunit_gas_tankless": return "+15% capacity";
     case "inunit_hpwh": return "+15% FHR";
@@ -705,6 +711,7 @@ function recommendedRuleLabel(st: SystemTypeKey): string {
     case "central_per_floor": return "Per-zone HPWH ≥ 1.25 × (total_kW ÷ zoneCount); each zone independently sized from the standard ladder";
     case "central_hrc": return "Gas backup MBH ≥ 1.25 × shortfall after HRC coverage; storage sized as a normal central plant";
     case "central_wastewater_hp": return "Smallest HPWH nameplate ≥ 1.25 × (total_kW ÷ wastewaterCOP)";
+    case "central_chp": return "Backup gas MBH ≥ 1.25 × (peak_BTUH − chp_recovery_BTUH) ÷ gas_η; CHP electric kW is the user's SKU choice (35 or 75)";
     case "inunit_gas_tank": return "Smallest tank whose condensing FHR ≥ 1.15 × peak-hour per unit";
     case "inunit_gas_tankless": return "Smallest input whose capacity at design rise ≥ 1.15 × peak GPM";
     case "inunit_hpwh": return "Smallest tank whose FHR ≥ 1.15 × peak-hour per unit";

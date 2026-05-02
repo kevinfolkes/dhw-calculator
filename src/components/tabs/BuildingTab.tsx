@@ -12,8 +12,10 @@ import {
   CENTRAL_BOILER_COST_FACTOR,
   CENTRAL_BOILER_DEFAULT_EFFICIENCY,
   CENTRAL_BOILER_LABEL,
+  CHP_ELECTRIC_KW_OPTIONS,
   CLIMATE_DESIGN,
   DWHR_DRAIN_TEMP_F,
+  GROUND_LOOP_TEMP_F,
   HPWH_TIER_ADJUSTMENT,
   MONTH_DAYS,
   RECIRC_CONTROL_LABEL,
@@ -21,8 +23,10 @@ import {
   cascadeEfficiencyBonus,
   type CascadeRedundancy,
   type CentralBoilerType,
+  type ChpElectricKW,
   type ClimateZoneKey,
   type HPWHTier,
+  type HpwhSourceMode,
   type RecircControlMode,
 } from "@/lib/engineering/constants";
 import { recircControlMultiplier } from "@/lib/engineering/recirc";
@@ -291,7 +295,8 @@ export function BuildingTab({ inputs, update }: Props) {
           inputs.systemType === "central_indirect" ||
           inputs.systemType === "central_hybrid" ||
           inputs.systemType === "central_steam_hx" ||
-          inputs.systemType === "central_hrc";
+          inputs.systemType === "central_hrc" ||
+          inputs.systemType === "central_chp";
         const showHpwhParams =
           inputs.systemType === "central_hpwh" ||
           inputs.systemType === "central_hybrid" ||
@@ -305,13 +310,24 @@ export function BuildingTab({ inputs, update }: Props) {
         const showPerFloorParams = inputs.systemType === "central_per_floor";
         const showHrcParams = inputs.systemType === "central_hrc";
         const showWastewaterParams = inputs.systemType === "central_wastewater_hp";
+        const showChpParams = inputs.systemType === "central_chp";
+        // Phase G: ground-loop coupling option, gated to the HPWH-bearing
+        // central systems where it's actually meaningful (closet HPWHs in
+        // MF are always air-coupled; central_wastewater_hp has its own
+        // wastewater source-temp model).
+        const showHpwhSourceMode =
+          inputs.systemType === "central_hpwh" ||
+          inputs.systemType === "central_hybrid" ||
+          inputs.systemType === "central_per_floor";
         const numShown =
           (showGasParams ? 2 : 0) +
           (showHpwhParams ? 2 : 0) +
           (showSwingTank ? 1 : 0) +
           (showPerFloorParams ? 1 : 0) +
           (showHrcParams ? 3 : 0) +
-          (showWastewaterParams ? 2 : 0);
+          (showWastewaterParams ? 2 : 0) +
+          (showChpParams ? 3 : 0) +
+          (showHpwhSourceMode ? 1 : 0);
         if (numShown === 0) return null; // central_resistance has nothing to tune here
         return (
         <Card>
@@ -524,6 +540,70 @@ export function BuildingTab({ inputs, update }: Props) {
                   min={3}
                   max={6}
                   step={0.1}
+                />
+              </Field>
+            )}
+            {showHpwhSourceMode && (
+              <Field
+                label="HPWH source coupling"
+                hint={
+                  inputs.hpwhSourceMode === "ground_loop"
+                    ? `Ground-loop: shallow vertical or horizontal loop at a near-constant ${GROUND_LOOP_TEMP_F}°F year-round. Eliminates winter capacity derate, lifts annual COP. Significant capex adder (loop-field drilling) — see cost model.`
+                    : "Air mech-room: HPWH compressor sees the climate-derived mech-room ambient. Default; matches typical multifamily installations."
+                }
+              >
+                <SelectInput<HpwhSourceMode>
+                  value={inputs.hpwhSourceMode}
+                  onChange={(v) => update("hpwhSourceMode", v)}
+                  options={[
+                    { value: "air_mech_room", label: "Air-coupled (mech room)" },
+                    { value: "ground_loop", label: `Ground loop (~${GROUND_LOOP_TEMP_F}°F year-round)` },
+                  ]}
+                />
+              </Field>
+            )}
+            {showChpParams && (
+              <Field
+                label="CHP electric output"
+                suffix="kW"
+                hint="Two SKU sizes: 35 kW (small reciprocating engine — Yanmar CP35D, Aisin GECC60A2, EnerTwin) for 60–150 unit MF, or 75 kW (Capstone C65 ICHP, Honda MCHP, Tecogen Inverde 75) for 150–400 unit MF."
+              >
+                <SelectInput<ChpElectricKW>
+                  value={inputs.chpElectricKW}
+                  onChange={(v) => update("chpElectricKW", v)}
+                  options={CHP_ELECTRIC_KW_OPTIONS.map((kw) => ({
+                    value: kw,
+                    label: `${kw} kW`,
+                  }))}
+                />
+              </Field>
+            )}
+            {showChpParams && (
+              <Field
+                label="Heat-to-power ratio"
+                hint="Recovered thermal kW per electric kW. Microturbines typically 1.5–1.8; reciprocating engines 1.6–2.2. Range 1.3–2.2; default 1.7 reflects a small recip-engine baseline."
+              >
+                <NumberInput
+                  value={inputs.chpHeatToPowerRatio}
+                  onChange={(n) => update("chpHeatToPowerRatio", n)}
+                  min={1.3}
+                  max={2.2}
+                  step={0.1}
+                />
+              </Field>
+            )}
+            {showChpParams && (
+              <Field
+                label="Annual run hours"
+                suffix="hr/yr"
+                hint="CHP is most economic at high uptime — 7000 hr/yr (~80% utilization) is typical for MF. Below 4000 hr/yr the payback collapses. Range 3000–8500."
+              >
+                <NumberInput
+                  value={inputs.chpAnnualRunHours}
+                  onChange={(n) => update("chpAnnualRunHours", n)}
+                  min={3000}
+                  max={8500}
+                  step={100}
                 />
               </Field>
             )}

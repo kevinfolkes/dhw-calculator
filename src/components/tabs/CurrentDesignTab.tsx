@@ -226,6 +226,9 @@ export function CurrentDesignTab({ inputs, result }: Props) {
   const isCentralPerFloor = inputs.systemType === "central_per_floor";
   const isCentralHRC = inputs.systemType === "central_hrc";
   const isCentralWastewaterHP = inputs.systemType === "central_wastewater_hp";
+  const isCentralCHP = inputs.systemType === "central_chp";
+  const isGroundLoopActive =
+    result.hpwhSourceMode === "ground_loop" && result.hpwhEffectiveSourceTempF > 0;
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
@@ -748,6 +751,55 @@ export function CurrentDesignTab({ inputs, result }: Props) {
               label="vs air-source baseline"
               value={`+${((result.wastewaterEffectiveCOP / Math.max(0.5, result.cop) - 1) * 100).toFixed(0)}%`}
               sub="COP advantage from stable warm source"
+              accent={A_OK}
+            />
+          </Grid>
+        )}
+
+        {isCentral && isCentralCHP && (
+          <Grid cols={3}>
+            <MetricCard
+              label={`${inputs.chpElectricKW} kW CHP`}
+              value={fmt(result.chpHeatRecoveryBTUH / 1000, 1)}
+              unit="MBH recovered"
+              sub={`H:P ratio ${inputs.chpHeatToPowerRatio.toFixed(2)}, ${inputs.chpAnnualRunHours} hr/yr`}
+              accent="#d8a87a"
+            />
+            <MetricCard
+              label="DHW coverage"
+              value={`${(result.chpCoverageFraction * 100).toFixed(0)}%`}
+              sub={`${fmt(result.chpAnnualContributionBTU / 1000000, 1)} MBTU/yr to DHW`}
+              accent="#d8a87a"
+            />
+            <MetricCard
+              label="Electric generated"
+              value={fmt(result.chpAnnualElectricGeneratedKWh / 1000, 0)}
+              unit="MWh/yr"
+              sub="building electric (or net-metered) — not DHW"
+              accent={A_OK}
+            />
+          </Grid>
+        )}
+
+        {isCentral && isGroundLoopActive && (
+          <Grid cols={3}>
+            <MetricCard
+              label="Ground-loop source"
+              value={fmt(result.hpwhEffectiveSourceTempF, 0)}
+              unit="°F"
+              sub="constant year-round (ASHRAE Apps Ch. 35)"
+              accent="#7dd3a3"
+            />
+            <MetricCard
+              label="Annual COP"
+              value={result.annualCOP.toFixed(2)}
+              sub="warmer winter source vs air-coupled"
+              accent={A_OK}
+            />
+            <MetricCard
+              label="Capacity factor"
+              value={result.capFactor.toFixed(2)}
+              sub="no winter derate (vs ~0.7 air-coupled in CZ5+)"
               accent={A_OK}
             />
           </Grid>
@@ -1420,6 +1472,30 @@ export function CurrentDesignTab({ inputs, result }: Props) {
                 value={result.wastewaterEffectiveCOP.toFixed(2)}
                 sub="constant year-round (sewer)"
                 accent="#5fa8b8"
+              />
+            </>
+          )}
+          {isCentral && isCentralCHP && (
+            <>
+              <MetricCard
+                label="Annual gas (backup)"
+                value={fmtUSD(result.annualGasCost)}
+                unit="/yr"
+                sub={`${fmt(result.annualGasTherms)} therms — covers DHW shortfall`}
+                accent={A_GAS}
+              />
+              <MetricCard
+                label="CHP coverage"
+                value={`${(result.chpCoverageFraction * 100).toFixed(0)}%`}
+                sub={`${fmt(result.chpAnnualContributionBTU / 1000000, 1)} MBTU/yr recovered (free to DHW)`}
+                accent="#d8a87a"
+              />
+              <MetricCard
+                label="Annual carbon (DHW only)"
+                value={fmt(result.annualGasCarbon)}
+                unit="lb CO₂"
+                sub="backup gas only — CHP fuel on electric account"
+                accent="#d8a87a"
               />
             </>
           )}

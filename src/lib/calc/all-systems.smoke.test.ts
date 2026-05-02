@@ -59,7 +59,16 @@ describe("all system types (smoke sweep)", () => {
           expect(m.totalCarbon).toBeGreaterThanOrEqual(0);
         }
         expect(isFiniteNumber(r.monthly.monthlyAnnualEnergy)).toBe(true);
-        expect(r.monthly.monthlyAnnualEnergy).toBeGreaterThan(0);
+        // For most systems annual energy is strictly positive. The lone
+        // exception is `central_chp` when CHP recovery fully covers the
+        // DHW load — by spec, only backup gas is counted as DHW-attributable
+        // (the CHP fuel itself is on the building electric account), so
+        // monthly therms can be zero. Allow zero in that specific case.
+        if (sys === "central_chp" && r.chpCoverageFraction >= 0.999) {
+          expect(r.monthly.monthlyAnnualEnergy).toBeGreaterThanOrEqual(0);
+        } else {
+          expect(r.monthly.monthlyAnnualEnergy).toBeGreaterThan(0);
+        }
       });
 
       it("flags is an array (no broken compliance check)", () => {

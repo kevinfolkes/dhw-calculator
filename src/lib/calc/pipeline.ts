@@ -9,11 +9,13 @@
  */
 import {
   ASHRAE_APT_DEMAND,
+  CHP_THERMAL_UTILIZATION_FACTOR,
   CLIMATE_DESIGN,
   ENVELOPE_PRESETS,
   GAS_TANK_WH,
   GAS_TANKLESS_WH,
   GRID_EF,
+  GROUND_LOOP_TEMP_F,
   HPWH_TANK_FHR,
   HPWH_TIER_ADJUSTMENT,
   HRC_UTILIZATION_FACTOR,
@@ -64,6 +66,8 @@ export function runCalc(input: DhwInputs): CalcResult {
     perFloorZoneCount,
     hrcCoolingTons, hrcYearRoundCoolingFraction, hrcCOPHeatRecovery,
     wastewaterSourceTempF, wastewaterCOP,
+    chpElectricKW, chpHeatToPowerRatio, chpAnnualRunHours,
+    hpwhSourceMode,
     inunitGasTanklessCombiInput, inunitGasCombiBufferTankSize, inunitResistanceTankSize,
     bufferTankEnabled,
     preheat, solarCollectorAreaSqft, dwhrEffectiveness, dwhrCoverage,
@@ -98,7 +102,22 @@ export function runCalc(input: DhwInputs): CalcResult {
 
   const totalUnits = unitsStudio + units1BR + units2BR + units3BR;
   const climate = CLIMATE_DESIGN[climateZone];
-  const effectiveHpwhAmbient = hpwhAmbientF ?? climate.mechRoomAnnual;
+  // Phase G: `hpwhSourceMode` lets the user swap the air-coupled mech-room
+  // ambient for a constant ground-loop temperature on HPWH-bearing central
+  // systems (central_hpwh, central_hybrid, central_per_floor). Other HPWH
+  // systems (in-unit HPWHs, central_wastewater_hp) keep their existing
+  // source models — closet HPWHs are always air-coupled, and wastewater HP
+  // has its own source-temp + COP fields. The user-supplied `hpwhAmbientF`
+  // override still wins if explicitly set (preserves backward compatibility
+  // for saved scenarios that pre-date Phase G).
+  const isGroundLoopEligibleSystem =
+    systemType === "central_hpwh" ||
+    systemType === "central_hybrid" ||
+    systemType === "central_per_floor";
+  const useGroundLoop =
+    hpwhSourceMode === "ground_loop" && isGroundLoopEligibleSystem;
+  const effectiveHpwhAmbient =
+    hpwhAmbientF ?? (useGroundLoop ? GROUND_LOOP_TEMP_F : climate.mechRoomAnnual);
 
   // HPWH efficiency tier — applied as a COP multiplier to every climate-based
   // hpwhCOP() call, so monthly / annual / combi COPs all scale consistently.
@@ -261,6 +280,23 @@ export function runCalc(input: DhwInputs): CalcResult {
   const safeWastewaterCOP = Math.min(6.0, Math.max(3.0, wastewaterCOP));
   const wastewaterEffectiveCOP = isCentralWastewaterHP ? safeWastewaterCOP : 0;
 
+  // ---- CENTRAL CHP — recovered heat capacity & runtime budget -------
+  // Recovered heat capacity (BTU/hr while running)
+  //   = chpElectricKW × chpHeatToPowerRatio × 3412 (BTU/hr per kW).
+  // Annual BTU budget = capacity × runHours, capped by the DHW load × the
+  // thermal-utilization factor (some recovered heat is wasted in summer
+  // when DHW load is low — buffer storage helps but isn't perfect).
+  // The CHP fuel use itself is counted against the building electric
+  // account (the displaced grid kWh), NOT the DHW account — full CHP
+  // economics need an electric-side credit which is out of scope.
+  // Backup gas covers the shortfall at gasEfficiency.
+  const isCentralCHP = systemType === "central_chp";
+  const safeChpHTP = Math.min(2.2, Math.max(1.3, chpHeatToPowerRatio));
+  const safeChpRunHours = Math.min(8760, Math.max(0, chpAnnualRunHours));
+  const chpRecoveryBTUH = isCentralCHP
+    ? chpElectricKW * safeChpHTP * 3412
+    : 0;
+
   // ---- TECH COMPARISON ---------------------------------------------------
   // For `central_indirect`, the boiler-side input must overcome both the
   // burner inefficiency and the heat-exchanger transfer derate from boiler
@@ -303,7 +339,18 @@ export function runCalc(input: DhwInputs): CalcResult {
   const annualDemandBTU = avgDayDemand * 8.33 * temperatureRise * 365;
   const annualRecircBTU = recircLossBTUH * 8760;
   const annualTotalBTU = annualDemandBTU + annualRecircBTU;
-  const annualCOP = hpwhCOP(climate.mechRoomAnnual, effectiveInletF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
+  // Annual-average source temperature for HPWH compressor work. With
+  // `hpwhSourceMode === "ground_loop"` on an eligible central system the
+  // source is a constant 50°F regardless of climate; otherwise the air-
+  // coupled mech-room annual mean drives the seasonal COP. The user's
+  // explicit `hpwhAmbientF` override still wins for the design-day calc
+  // above, but for the annual-energy rollup we use the source itself so
+  // monthly variation in air temp doesn't bleed in for ground-coupled
+  // systems.
+  const annualSourceTempF = useGroundLoop
+    ? GROUND_LOOP_TEMP_F
+    : climate.mechRoomAnnual;
+  const annualCOP = hpwhCOP(annualSourceTempF, effectiveInletF, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;
 
   // Pure-fuel annual rollups. For `central_hybrid` we override the gas + HPWH
   // annual figures below so therms reflect only the gas-side share and
@@ -356,6 +403,29 @@ export function runCalc(input: DhwInputs): CalcResult {
       (swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0);
   }
 
+  // ---- CENTRAL CHP: split annual DHW BTU between recovered CHP heat and
+  // gas backup. CHP contribution is capped by recovery capacity × runtime
+  // × utilization factor, AND by the annual DHW load. Gas backup covers
+  // the remainder at the standard gasEfficiency (condensing boiler).
+  let chpAnnualContributionBTU = 0;
+  let chpCoverageFraction = 0;
+  if (isCentralCHP) {
+    const chpAnnualHeatAvailable = chpRecoveryBTUH * safeChpRunHours;
+    const chpUsableAnnualBTU = chpAnnualHeatAvailable * CHP_THERMAL_UTILIZATION_FACTOR;
+    chpAnnualContributionBTU = Math.min(annualTotalBTU, chpUsableAnnualBTU);
+    chpCoverageFraction = annualTotalBTU > 0
+      ? chpAnnualContributionBTU / annualTotalBTU
+      : 0;
+    const backupBTU = Math.max(0, annualTotalBTU - chpAnnualContributionBTU);
+    annualGasTherms = backupBTU / (gasEfficiency * 100000);
+    // CHP heat itself is "free" from the DHW perspective (the gas burned
+    // by the CHP engine is counted against the building electric account,
+    // since it produces electricity that displaces grid kWh). Pure-DHW
+    // electric draw on a CHP system is essentially zero — only the swing
+    // tank standby (if enabled).
+    annualHPWHKWh_total = swingTankEnabled ? recircLossKW * 8760 * 0.5 : 0;
+  }
+
   const annualGasCost = annualGasTherms * gasRate;
   const annualResistanceCost = annualResistanceKWh * elecRate;
   const annualHPWHCost = annualHPWHKWh_total * elecRate;
@@ -378,6 +448,7 @@ export function runCalc(input: DhwInputs): CalcResult {
         systemType === "central_per_floor" ||
         systemType === "central_hrc" ||
         systemType === "central_wastewater_hp" ||
+        systemType === "central_chp" ||
         systemType === "inunit_hpwh" ||
         systemType === "inunit_combi"
       ? annualHPWHKWh_total
@@ -701,7 +772,14 @@ export function runCalc(input: DhwInputs): CalcResult {
   const monthly: MonthlyRow[] = MONTHS.map((mName, m) => {
     const daysInMonth = MONTH_DAYS[m];
     const monthAmbient = climate.avgAnnual + monthlyAmbientAdjustment(m, climateZone);
-    const monthMechRoom = climate.mechRoomAnnual + monthlyAmbientAdjustment(m, climateZone) * 0.5;
+    // Phase G: ground-loop coupled HPWH systems see a constant source
+    // temperature year-round, eliminating winter capacity derate. For
+    // non-eligible systems we fall back to the climate-adjusted mech-room
+    // model so the in-unit / wastewater / non-HPWH branches stay
+    // unchanged.
+    const monthMechRoom = useGroundLoop
+      ? GROUND_LOOP_TEMP_F
+      : climate.mechRoomAnnual + monthlyAmbientAdjustment(m, climateZone) * 0.5;
     // Base monthly inlet (no preheat) — climate-only.
     const baseMonthInlet = baseEffectiveInletF + monthlyInletAdjustment(m, climateZone);
     // Per-month preheat lift: solar varies by month (insolation), DWHR is
@@ -856,6 +934,20 @@ export function runCalc(input: DhwInputs): CalcResult {
       dhwEnergy = monthTotalBTU / 3412 / safeWastewaterCOP;
       unit = "kWh";
       dhwCost = dhwEnergy * elecRate;
+    } else if (systemType === "central_chp") {
+      // Cogeneration: recovered heat covers the chpCoverageFraction share of
+      // each month's DHW load; gas backup covers the rest at gasEfficiency.
+      // CHP recovered heat itself is "free" to the DHW account (the CHP fuel
+      // is counted against the building electric account since it produces
+      // electricity that displaces grid kWh). Use the annual coverage
+      // fraction as a flat monthly proxy — the CHP plant typically runs
+      // base-loaded, so the fraction is roughly constant.
+      const monthTotalBTU = monthDHWBTU_central + recircLossBTUH * 24 * daysInMonth;
+      const monthBackupBTU = monthTotalBTU * (1 - chpCoverageFraction);
+      const monthBackupTherms = monthBackupBTU / (gasEfficiency * 100000);
+      unit = "therms";
+      dhwEnergy = monthBackupTherms;
+      dhwCost = monthBackupTherms * gasRate;
     } else if (systemType === "inunit_gas_tank") {
       dhwEnergy = monthDHWBTU_inunit_total / (gasTankUEF * 100000);
       unit = "therms";
@@ -957,6 +1049,14 @@ export function runCalc(input: DhwInputs): CalcResult {
         hrcCoverageFraction * safeHrcCOP + (1 - hrcCoverageFraction) * gasEfficiency;
     } else if (systemType === "central_wastewater_hp") {
       effectiveMonthCOP_dhw = safeWastewaterCOP;
+    } else if (systemType === "central_chp") {
+      // Blended effective efficiency: CHP-recovered share at "infinite"
+      // COP (free heat from the DHW perspective — fuel is on the electric
+      // account); gas backup share at gasEfficiency. We use a synthetic
+      // CHP COP of 1.0 as a placeholder so the row reads sensibly and the
+      // weighted average represents "effective therms per BTU of DHW load".
+      effectiveMonthCOP_dhw =
+        chpCoverageFraction * 1.0 + (1 - chpCoverageFraction) * gasEfficiency;
     } else if (systemType === "inunit_gas_tank") {
       effectiveMonthCOP_dhw = gasTankUEF;
     } else if (systemType === "inunit_gas_tankless") {
@@ -1164,6 +1264,19 @@ export function runCalc(input: DhwInputs): CalcResult {
     hrcAnnualContributionBTU: +hrcAnnualContributionBTU.toFixed(0),
     hrcCoverageFraction: +hrcCoverageFraction.toFixed(4),
     wastewaterEffectiveCOP: +wastewaterEffectiveCOP.toFixed(3),
+    chpHeatRecoveryBTUH: +chpRecoveryBTUH.toFixed(0),
+    chpAnnualRecoveryBTU: isCentralCHP
+      ? +(chpRecoveryBTUH * safeChpRunHours).toFixed(0)
+      : 0,
+    chpAnnualContributionBTU: +chpAnnualContributionBTU.toFixed(0),
+    chpCoverageFraction: +chpCoverageFraction.toFixed(4),
+    chpAnnualElectricGeneratedKWh: isCentralCHP
+      ? +(chpElectricKW * safeChpRunHours).toFixed(0)
+      : 0,
+    hpwhSourceMode,
+    hpwhEffectiveSourceTempF: isGroundLoopEligibleSystem
+      ? +effectiveHpwhAmbient.toFixed(1)
+      : 0,
     preheatType: preheat,
     annualSolarFraction: preheatActive ? +annualSolarFraction.toFixed(4) : 0,
     annualDwhrLiftF: preheatActive ? +annualDwhrLiftF.toFixed(2) : 0,

@@ -6,10 +6,15 @@
  */
 import {
   CENTRAL_BOILER_COST_FACTOR,
+  CHP_BASE_COST_BY_KW,
+  GROUND_LOOP_COST_BASE,
+  GROUND_LOOP_COST_PER_KW,
   cascadeCostPremium,
   totalInstalledMBHWithRedundancy,
   type CascadeRedundancy,
   type CentralBoilerType,
+  type ChpElectricKW,
+  type HpwhSourceMode,
 } from "@/lib/engineering/constants";
 import type { SystemTypeKey } from "@/lib/engineering/system-types";
 
@@ -29,6 +34,14 @@ export interface InstalledCostParams {
   boilerCount?: number;
   /** Cascade redundancy mode. Defaults to "N" (no redundancy). */
   cascadeRedundancy?: CascadeRedundancy;
+  /** HPWH source-coupling mode (Phase G). When "ground_loop" on an
+   *  eligible system (central_hpwh / central_hybrid / central_per_floor),
+   *  a ground-loop adder is layered on top of the base HPWH cost.
+   *  Defaults to "air_mech_room". */
+  hpwhSourceMode?: HpwhSourceMode;
+  /** CHP nameplate electric output (kW) for `central_chp` systems. Drives
+   *  the size-specific base cost (35 kW = $120k, 75 kW = $220k). */
+  chpElectricKW?: ChpElectricKW;
 }
 
 export function installedCost(
@@ -80,7 +93,11 @@ export function installedCost(
     const hpwhPart = 40000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
     const gasPart = 0.6 * cascadePremium * boilerFactor *
       (15000 + installedInputMBH * 12);
-    return hpwhPart + gasPart;
+    const groundLoopAdder =
+      params.hpwhSourceMode === "ground_loop"
+        ? GROUND_LOOP_COST_BASE + GROUND_LOOP_COST_PER_KW * (params.kW ?? 0)
+        : 0;
+    return hpwhPart + gasPart + groundLoopAdder;
   }
   if (systemType === "central_steam_hx") {
     // Steam HX is more expensive than direct-fired boiler — the shell-and-
@@ -92,14 +109,40 @@ export function installedCost(
     return 10000 + (params.storageGal ?? 0) * 6 + (params.kW ?? 0) * 150;
   }
   if (systemType === "central_hpwh") {
-    return 40000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
+    const base = 40000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
+    const groundLoopAdder =
+      params.hpwhSourceMode === "ground_loop"
+        ? GROUND_LOOP_COST_BASE + GROUND_LOOP_COST_PER_KW * (params.kW ?? 0)
+        : 0;
+    return base + groundLoopAdder;
   }
   if (systemType === "central_per_floor") {
     // Per-zone HPWH: lower base (~$15k vs $40k) per zone, scaled. Caller
     // multiplies this by zoneCount in the auto-sizer to get total plant
     // cost. Per-zone cost = base + per-zone storage gal × $10 + per-zone
-    // kW × $800 (matches central_hpwh per-kW / per-gal scaling).
-    return 15000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
+    // kW × $800 (matches central_hpwh per-kW / per-gal scaling). Ground-
+    // loop adder applies once at the per-zone level so the auto-sizer's
+    // zoneCount multiplier captures total field-loop cost across all
+    // zones (a single building loop field is rare in per-floor designs;
+    // typically each zone gets its own loop run).
+    const base = 15000 + (params.storageGal ?? 0) * 10 + (params.kW ?? 0) * 800;
+    const groundLoopAdder =
+      params.hpwhSourceMode === "ground_loop"
+        ? GROUND_LOOP_COST_BASE + GROUND_LOOP_COST_PER_KW * (params.kW ?? 0)
+        : 0;
+    return base + groundLoopAdder;
+  }
+  if (systemType === "central_chp") {
+    // Cogeneration: SKU-specific base cost (turbine/engine + heat-recovery
+    // integration + permits) + storage tank ($8/gal mirrors central_gas)
+    // + backup gas boiler ($12/MBH mirrors central_gas). The CHP base
+    // cost dwarfs the storage and boiler so this is dominated by the
+    // CHP electric kW selection (35 kW → $120k base, 75 kW → $220k base).
+    const chpKW = params.chpElectricKW ?? 35;
+    const baseCost = CHP_BASE_COST_BY_KW[chpKW];
+    const storage = (params.storageGal ?? 0) * 8;
+    const backup = (params.inputMBH ?? 0) * 12;
+    return baseCost + storage + backup;
   }
   if (systemType === "central_hrc") {
     // Heat-recovery integration cost (the chiller itself is out of scope).

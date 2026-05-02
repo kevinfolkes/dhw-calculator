@@ -39,6 +39,7 @@ describe("runCalc (integration)", () => {
       "central_hybrid", "central_steam_hx",
       "central_resistance", "central_hpwh",
       "central_per_floor", "central_hrc", "central_wastewater_hp",
+      "central_chp",
       "inunit_gas_tank", "inunit_gas_tankless", "inunit_hpwh",
       "inunit_combi", "inunit_combi_gas",
       "inunit_combi_gas_tankless", "inunit_resistance", "inunit_combi_resistance",
@@ -503,5 +504,115 @@ describe("multi-boiler cascade", () => {
     const single = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect", boilerCount: 1 });
     const four = runCalc({ ...DEFAULT_INPUTS, systemType: "central_indirect", boilerCount: 4 });
     expect(four.annualGasTherms).toBeLessThan(single.annualGasTherms);
+  });
+});
+
+describe("Phase G — HPWH source-coupling modifier (ground_loop)", () => {
+  it("ground_loop on central_hpwh produces lower annual kWh than air_mech_room in cold climate (monthly model)", () => {
+    // CZ7 Duluth — monthly air-coupled mech room dips well below ground-loop
+    // temp in winter (Duluth Jan ≈ 37°F vs 50°F ground), so the monthly-
+    // aggregated electric energy must be lower for ground-coupled.
+    // (The pipeline's `annualHPWHKWh_total` single-COP rollup uses the
+    // climate's mechRoomAnnual which is held conservative — typically ≥
+    // ground-loop temp — so we compare the monthly aggregation instead,
+    // which is what the Energy / Compare tabs actually display.)
+    const baseInputs = {
+      ...DEFAULT_INPUTS,
+      systemType: "central_hpwh" as const,
+      climateZone: "7 - Duluth" as const,
+      hpwhAmbientF: null,
+    };
+    const air = runCalc({ ...baseInputs, hpwhSourceMode: "air_mech_room" });
+    const ground = runCalc({ ...baseInputs, hpwhSourceMode: "ground_loop" });
+    // Monthly-aggregated electric energy (kWh) — this is what users see on
+    // the Energy / monthly-model tabs.
+    const airMonthlyTotal = air.monthly.monthly.reduce((s, m) => s + m.totalEnergy, 0);
+    const groundMonthlyTotal = ground.monthly.monthly.reduce(
+      (s, m) => s + m.totalEnergy,
+      0,
+    );
+    expect(groundMonthlyTotal).toBeLessThan(airMonthlyTotal);
+    expect(ground.hpwhEffectiveSourceTempF).toBe(50);
+  });
+
+  it("ground_loop has NO effect on inunit_hpwh (closet HPWHs always air-coupled)", () => {
+    const air = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_hpwh",
+      hpwhSourceMode: "air_mech_room",
+    });
+    const ground = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_hpwh",
+      hpwhSourceMode: "ground_loop",
+    });
+    // The pipeline-level `hpwhEffectiveSourceTempF` sentinel must be 0 for
+    // the in-unit case (system not eligible for ground-loop override).
+    expect(air.hpwhEffectiveSourceTempF).toBe(0);
+    expect(ground.hpwhEffectiveSourceTempF).toBe(0);
+    // Annual energy must match exactly — no ground-loop override applied.
+    expect(ground.annualHPWHKWh_total).toBeCloseTo(air.annualHPWHKWh_total, 4);
+  });
+});
+
+describe("Phase G — central_chp cogeneration", () => {
+  it("central_chp with default inputs produces non-zero chp* result fields", () => {
+    const r = runCalc({ ...DEFAULT_INPUTS, systemType: "central_chp" });
+    expect(r.chpHeatRecoveryBTUH).toBeGreaterThan(0);
+    expect(r.chpAnnualRecoveryBTU).toBeGreaterThan(0);
+    expect(r.chpAnnualContributionBTU).toBeGreaterThan(0);
+    expect(r.chpCoverageFraction).toBeGreaterThan(0);
+    expect(r.chpAnnualElectricGeneratedKWh).toBeGreaterThan(0);
+    // chpAnnualRecoveryBTU = chpHeatRecoveryBTUH × runHours
+    expect(r.chpAnnualRecoveryBTU).toBeCloseTo(
+      r.chpHeatRecoveryBTUH * DEFAULT_INPUTS.chpAnnualRunHours,
+      0,
+    );
+    // chpAnnualElectricGeneratedKWh = electric kW × run hours
+    expect(r.chpAnnualElectricGeneratedKWh).toBeCloseTo(
+      DEFAULT_INPUTS.chpElectricKW * DEFAULT_INPUTS.chpAnnualRunHours,
+      0,
+    );
+  });
+
+  it("central_chp annualGasTherms is significantly less than central_gas at the same load", () => {
+    const gas = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    const chp = runCalc({ ...DEFAULT_INPUTS, systemType: "central_chp" });
+    // CHP recovers most of the DHW load — annualGasTherms must be at least
+    // 30% lower than the equivalent central_gas plant.
+    expect(chp.annualGasTherms).toBeLessThan(gas.annualGasTherms * 0.70);
+  });
+
+  it("central_chp with chpAnnualRunHours=0 falls back to backup gas only (no CHP contribution)", () => {
+    const r = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "central_chp",
+      chpAnnualRunHours: 0,
+    });
+    expect(r.chpAnnualContributionBTU).toBe(0);
+    expect(r.chpCoverageFraction).toBe(0);
+    expect(r.chpAnnualElectricGeneratedKWh).toBe(0);
+    // The backup gas should now cover the full annual DHW load — therms
+    // should approximately match a central_gas plant at the same load.
+    const gas = runCalc({ ...DEFAULT_INPUTS, systemType: "central_gas" });
+    expect(r.annualGasTherms).toBeCloseTo(gas.annualGasTherms, 0);
+  });
+
+  it("non-CHP systems return chp* fields as 0 (sentinel)", () => {
+    const systems = [
+      "central_gas",
+      "central_hpwh",
+      "central_resistance",
+      "inunit_hpwh",
+      "inunit_gas_tank",
+    ] as const;
+    for (const sys of systems) {
+      const r = runCalc({ ...DEFAULT_INPUTS, systemType: sys });
+      expect(r.chpHeatRecoveryBTUH).toBe(0);
+      expect(r.chpAnnualRecoveryBTU).toBe(0);
+      expect(r.chpAnnualContributionBTU).toBe(0);
+      expect(r.chpCoverageFraction).toBe(0);
+      expect(r.chpAnnualElectricGeneratedKWh).toBe(0);
+    }
   });
 });

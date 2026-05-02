@@ -79,6 +79,8 @@ export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
         boilerType: input.centralBoilerType,
         boilerCount: input.boilerCount,
         cascadeRedundancy: input.cascadeRedundancy,
+        hpwhSourceMode: input.hpwhSourceMode,
+        chpElectricKW: input.chpElectricKW,
         ...params,
       },
       totalUnits,
@@ -505,6 +507,86 @@ export function autoSize(ctx: AutoSizeContext): AutoSizeResult | null {
     };
   }
 
+  // ---------- CENTRAL CHP (cogeneration with two SKU sizes) --------------
+  // Two real-world SKU sizes: 35 kW (small reciprocating engine — Yanmar
+  // CP35D, Aisin GECC60A2) and 75 kW (small microturbine / larger recip
+  // — Capstone C65 ICHP, Honda MCHP, Tecogen Inverde 75). The user picks
+  // the size on the Building tab; the auto-sizer simply respects that
+  // selection (CHP equipment is sized for thermal+electric simultaneity,
+  // not just DHW load — out of scope to re-derive from cooling model).
+  // The auto-sized companions are: storage tank (mirrors central_gas)
+  // and a backup gas boiler MBH that covers the peak hour shortfall.
+  if (st === "central_chp") {
+    const minStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction / 50) * 50;
+    const recStorageGal = Math.ceil(ctx.peakHourDemand * ctx.storageCoef / ctx.usableFraction * 1.25 / 50) * 50;
+    const minTank = CENTRAL_TANK_SIZES.find(s => s >= minStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+    const recTank = CENTRAL_TANK_SIZES.find(s => s >= recStorageGal) ?? CENTRAL_TANK_SIZES[CENTRAL_TANK_SIZES.length - 1];
+
+    // Backup gas covers the peak-hour shortfall after CHP recovery. CHP
+    // is treated as base-loaded (running at peak design hour) — typical
+    // since CHP plants are most economic at high uptime. The shortfall
+    // covered by the backup boiler is therefore the peak hour load minus
+    // the CHP recovered-heat capacity.
+    const safeHTP = Math.min(2.2, Math.max(1.3, input.chpHeatToPowerRatio));
+    const chpRecoveryBTUH = input.chpElectricKW * safeHTP * 3412;
+    const backupShortfallBTUH = Math.max(0, ctx.totalBTUH - chpRecoveryBTUH);
+    const minBackupMBH = (backupShortfallBTUH / Math.max(0.5, input.gasEfficiency)) / 1000;
+    const recBackupMBH = minBackupMBH * 1.25;
+    const minCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= minBackupMBH) ?? CENTRAL_GAS_INPUT_MBH[0];
+    const recCap = CENTRAL_GAS_INPUT_MBH.find(m => m >= recBackupMBH) ?? CENTRAL_GAS_INPUT_MBH[0];
+
+    let best: (SizingRec & { tank: number; cap: number; capUnit: string; cap2: number; cap2Unit: string }) | null = null;
+    for (const tank of CENTRAL_TANK_SIZES) {
+      if (tank < minTank) continue;
+      if (tank > recTank * 2) continue;
+      const size: InstalledCostParams = { storageGal: tank, inputMBH: recCap, kW: input.chpElectricKW };
+      const capCost = ic(size);
+      const annCost = annualCostForSize(size);
+      const total15 = capCost + annCost * 15;
+      if (!best || total15 < best.total15!) {
+        best = {
+          tank,
+          cap: input.chpElectricKW,
+          capUnit: "kW CHP electric",
+          cap2: recCap,
+          cap2Unit: "MBH gas backup",
+          capCost,
+          annCost,
+          total15,
+        };
+      }
+    }
+
+    const minSize: InstalledCostParams = { storageGal: minTank, inputMBH: minCap, kW: input.chpElectricKW };
+    const recSize: InstalledCostParams = { storageGal: recTank, inputMBH: recCap, kW: input.chpElectricKW };
+
+    return {
+      system: st,
+      reqPeakHourGPH: ctx.peakHourDemand,
+      reqOutputMBH: ctx.totalBTUH / 1000,
+      reqOutputKW: ctx.totalKW,
+      minimum: {
+        tank: minTank,
+        cap: input.chpElectricKW,
+        capUnit: "kW CHP electric",
+        cap2: minCap,
+        cap2Unit: "MBH gas backup",
+        capCost: ic(minSize),
+        annCost: annualCostForSize(minSize),
+      },
+      recommended: {
+        tank: recTank,
+        cap: input.chpElectricKW,
+        capUnit: "kW CHP electric",
+        cap2: recCap,
+        cap2Unit: "MBH gas backup",
+        capCost: ic(recSize),
+        annCost: annualCostForSize(recSize),
+      },
+      lifecycle: best,
+    };
+  }
+
   // ---------- CENTRAL STEAM-TO-DHW HX (steam + indirect tank) ------------
   // Same shape as central_indirect but the upstream efficiency is the
   // combined steam-source × HX effectiveness, not gas burner efficiency.
@@ -923,6 +1005,19 @@ function annualCostForSizeImpl(ctx: AutoSizeContext, size: InstalledCostParams):
   if (st === "central_wastewater_hp") {
     const safeCOP = Math.min(6.0, Math.max(3.0, input.wastewaterCOP));
     return ((ctx.annualTotalBTU / 3412) / safeCOP) * input.elecRate;
+  }
+  if (st === "central_chp") {
+    // Annual DHW therms = backup-gas share only (recovered CHP heat is
+    // "free" to the DHW account; the CHP fuel itself is on the building
+    // electric account). Mirrors the pipeline.
+    const safeHTP = Math.min(2.2, Math.max(1.3, input.chpHeatToPowerRatio));
+    const safeRunHours = Math.min(8760, Math.max(0, input.chpAnnualRunHours));
+    const chpRecoveryBTUH = input.chpElectricKW * safeHTP * 3412;
+    const chpUsableAnnualBTU = chpRecoveryBTUH * safeRunHours * 0.80; // CHP_THERMAL_UTILIZATION_FACTOR
+    const chpContributionBTU = Math.min(ctx.annualTotalBTU, chpUsableAnnualBTU);
+    const backupBTU = Math.max(0, ctx.annualTotalBTU - chpContributionBTU);
+    const backupTherms = backupBTU / (input.gasEfficiency * 100000);
+    return backupTherms * input.gasRate;
   }
   if (st === "inunit_gas_tank") {
     const tankGal = size.tankGal as GasTankSize;

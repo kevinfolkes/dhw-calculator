@@ -8,6 +8,7 @@ import type {
   CascadeRedundancy,
   CentralBoilerType,
   CentralGasTanklessInput,
+  ChpElectricKW,
   ClimateZoneKey,
   EnvelopeKey,
   GasTankSize,
@@ -16,6 +17,7 @@ import type {
   GridSubregion,
   HPWHTankSize,
   HPWHTier,
+  HpwhSourceMode,
   InunitGasBufferTankSize,
   InunitResistanceTankSize,
   OccupancyProfile,
@@ -248,6 +250,32 @@ export interface DhwInputs {
    *  3.0–6.0; default 4.5 reflects typical SHARC / Huber field data. */
   wastewaterCOP: number;
 
+  // Central cogeneration / micro-CHP (Phase G)
+  /** Nameplate electric output (kW) for a `central_chp` system. Two SKUs
+   *  only — 35 kW (small reciprocating engine: Yanmar CP35, Aisin GECC35)
+   *  for 60–150 unit MF, or 75 kW (small microturbine / larger recip)
+   *  for 150–400 unit MF. */
+  chpElectricKW: ChpElectricKW;
+  /** Heat-to-power ratio for a `central_chp` system: recovered thermal
+   *  BTU/hr per electric BTU/hr. Gas microturbines typically 1.5–1.8;
+   *  reciprocating engines 1.6–2.0. Range 1.3–2.2; default 1.7 reflects
+   *  a small recip-engine baseline. */
+  chpHeatToPowerRatio: number;
+  /** Annual operating hours for a `central_chp` system. CHP plants need
+   *  high uptime to economically pencil out — 7000 hours/year (~80%
+   *  utilization) is typical for MF; range 4000–8500. */
+  chpAnnualRunHours: number;
+
+  // HPWH source-coupling mode (Phase G)
+  /** Source-coupling mode for HPWH-bearing central systems. "air_mech_room"
+   *  (default) uses mech-room air at climate.mechRoomAnnual — current
+   *  behavior. "ground_loop" uses a constant ~50°F shallow ground-loop
+   *  ambient, eliminating winter capacity derate and lifting annual COP.
+   *  Only applies to central_hpwh, central_hybrid, and central_per_floor
+   *  (in-unit HPWHs in MF are always air-coupled; central_wastewater_hp
+   *  has its own source-temp model). */
+  hpwhSourceMode: HpwhSourceMode;
+
   // In-unit electric resistance (DHW-only and combi variants)
   /** Selected per-unit electric resistance tank size (gal). Used by both
    *  `inunit_resistance` (DHW-only) and `inunit_combi_resistance` (DHW +
@@ -362,6 +390,10 @@ export const DEFAULT_INPUTS: DhwInputs = {
   hrcCOPHeatRecovery: 4.0,
   wastewaterSourceTempF: 60,
   wastewaterCOP: 4.5,
+  chpElectricKW: 35,
+  chpHeatToPowerRatio: 1.7,
+  chpAnnualRunHours: 7000,
+  hpwhSourceMode: "air_mech_room",
   fixtureGPM: { ...DEFAULT_FIXTURE_GPM },
   preheat: "none",
   solarCollectorAreaSqft: 0,

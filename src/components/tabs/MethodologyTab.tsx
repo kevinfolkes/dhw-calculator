@@ -25,9 +25,64 @@ export function MethodologyTab() {
             demand, sizing, monthly energy, auto-size recommendations, and compliance flags.
           </p>
           <p>
-            The tool supports seven system archetypes: three central (gas, resistance, HPWH with
-            recirculation) and four in-unit (gas tank, gas tankless, HPWH-only, combi HPWH+hydronic).
-            Each system uses the same demand calculation but different sizing logic.
+            The tool now supports 19 system types across two topologies (central and in-unit),
+            plus three orthogonal modifiers (preheat, recirc control, HPWH source coupling).
+            Each system uses the same demand calculation but different sizing, annual energy,
+            and cost logic — see the System Type Taxonomy section below for the full table.
+          </p>
+        </Prose>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>System Type Taxonomy</CardTitle>
+        </CardHeader>
+        <Prose>
+          <p>
+            The system-type taxonomy is the calculator&rsquo;s primary axis of variation. Each
+            system has its own auto-sizing rule, monthly energy formula, cost model, and
+            compliance flags. The table below lists every modeled system type with its
+            classification axes and primary engineering source.
+          </p>
+          <Table
+            head={[
+              "System key",
+              "Topology",
+              "Tech",
+              "Subtech",
+              "Heat?",
+              "Recirc?",
+              "Primary source",
+            ]}
+            rows={[
+              ["central_gas", "central", "gas", "tank", "N", "Y", "ASHRAE Apps Ch. 51"],
+              ["central_gas_tankless", "central", "gas", "tankless", "N", "Y", "ASHRAE Apps Ch. 51 §Instantaneous"],
+              ["central_indirect", "central", "gas", "tank", "N", "Y", "ASHRAE Apps Ch. 51 (boiler+HX)"],
+              ["central_hybrid", "central", "hpwh+gas", "tank", "N", "Y", "NEEA AWHS / NYSERDA MF HPWH 2022"],
+              ["central_steam_hx", "central", "gas/steam", "tank", "N", "Y", "ASHRAE S&E Ch. 50; ASPE Vol. 2 Ch. 5"],
+              ["central_resistance", "central", "resistance", "tank", "N", "Y", "ASHRAE Apps Ch. 51"],
+              ["central_hpwh", "central", "hpwh", "tank", "N", "Y", "NEEA AWHS; NYSERDA 2022; AHRI 1300"],
+              ["central_per_floor", "central", "hpwh", "tank", "N", "Y", "ACEEE MF Distribution; NREL/PNNL field"],
+              ["central_hrc", "central", "hpwh+gas", "tank", "N", "Y", "ASHRAE Apps Ch. 36 §Heat Recovery"],
+              ["central_wastewater_hp", "central", "hpwh", "tank", "N", "Y", "SHARC International; IEA HPT Annex 51"],
+              ["central_chp", "central", "gas (cogen)", "—", "N", "Y", "ASHRAE Apps Ch. 7; DOE CHP Catalog"],
+              ["inunit_gas_tank", "inunit", "gas", "tank", "N", "N", "AHRI 1300; DOE UEF; ASHRAE 90.1 7.8"],
+              ["inunit_gas_tankless", "inunit", "gas", "tankless", "N", "N", "AHRI 1700; ASHRAE 90.1 7.8"],
+              ["inunit_hpwh", "inunit", "hpwh", "tank", "N", "N", "AHRI 1300; ENERGY STAR v4.0"],
+              ["inunit_combi", "inunit", "hpwh", "tank", "Y", "N", "ENERGY STAR MFNC v1.2"],
+              ["inunit_combi_gas", "inunit", "gas", "tank", "Y", "N", "AHRI 1300; ASHRAE 90.1 7.8"],
+              ["inunit_combi_gas_tankless", "inunit", "gas", "tankless", "Y", "N", "AHRI 1700; ASHRAE 90.1 7.8"],
+              ["inunit_resistance", "inunit", "resistance", "tank", "N", "N", "AHRI 1300; DOE UEF"],
+              ["inunit_combi_resistance", "inunit", "resistance", "tank", "Y", "N", "AHRI 1300; ACCA Manual J"],
+            ]}
+          />
+          <H4>Cross-validation status</H4>
+          <p>
+            All 19 system types currently rest on engineering judgment derived from
+            manufacturer literature, ASHRAE handbook chapters, and the published standards
+            cited above. <Em>ASHRAE / ASPE worked-example calibration</Em> against the formal
+            reference cases is pending in a future revision; until that completes, the model
+            should be treated as design-grade rather than reference-grade.
           </p>
         </Prose>
       </Card>
@@ -649,33 +704,94 @@ export function MethodologyTab() {
           <CardTitle>14. Full reference list</CardTitle>
         </CardHeader>
         <Prose>
+          <H4>ASHRAE handbooks</H4>
           <ul>
             <li>
               <Em>ASHRAE HVAC Applications Handbook</Em>, Ch. 51 (Service Water Heating) &mdash;
-              per-apartment demand, storage/recovery coefficients
+              per-apartment demand, storage/recovery coefficients, instantaneous sizing
             </li>
-            <li><Em>ASHRAE 90.1-2022</Em> (Energy Standard) &mdash; pipe insulation, equipment minima</li>
+            <li>
+              <Em>ASHRAE Systems &amp; Equipment Handbook</Em>, Ch. 50 (Service Water Heating
+              Equipment) &mdash; central plant configurations, indirect tanks, steam HX
+            </li>
+            <li>
+              <Em>ASHRAE HVAC Applications Handbook</Em>, Ch. 35 (Geothermal Energy) &mdash;
+              ground-loop source coupling, soil thermal properties (Phase G ground-loop modifier)
+            </li>
+            <li>
+              <Em>ASHRAE HVAC Applications Handbook</Em>, Ch. 7 (Combined Heat and Power) &mdash;
+              cogeneration sizing, heat-recovery integration (Phase G CHP system)
+            </li>
+            <li>
+              <Em>ASHRAE HVAC Applications Handbook</Em>, Ch. 36 (Solar Energy Use) &mdash;
+              solar thermal preheat fraction model
+            </li>
+            <li>
+              <Em>ASHRAE Handbook Fundamentals</Em>, Ch. 14 (design temps) and Ch. 32 (ground
+              water temperature)
+            </li>
+          </ul>
+          <H4>ASHRAE / ASPE standards</H4>
+          <ul>
+            <li><Em>ASHRAE 90.1-2022</Em> (Energy Standard) Section 7 &mdash; pipe insulation, equipment minima, recirc control</li>
             <li>
               <Em>ASHRAE 188-2021</Em> (Legionellosis Risk Management) &mdash; storage temperature,
               water management plan
             </li>
-            <li><Em>ASHRAE Handbook Fundamentals</Em>, Ch. 14 (design temps) and Ch. 32 (ground water temperature)</li>
             <li>
-              <Em>ASPE Data Book Vol. 2</Em>, Ch. 5 &mdash; Modified Hunter curve, fixture co-use
+              <Em>ASPE Data Book Vol. 2</Em>, Ch. 5 (Cold &amp; Hot Water Supply) &mdash; Modified
+              Hunter curve, fixture co-use
             </li>
-            <li><Em>2021 IPC / 2021 UPC</Em> &mdash; WSFU tables, ASSE 1070 mixing-valve requirements</li>
+          </ul>
+          <H4>Codes &amp; certifications</H4>
+          <ul>
+            <li><Em>2024 IECC + 2021 IPC</Em> &mdash; WSFU tables, ASSE 1070 mixing-valve, prescriptive insulation</li>
             <li><Em>ACCA Manual J</Em> (abbreviated method) &mdash; residential heating load</li>
+            <li><Em>CEC Title 24</Em> Section 150 + 110 &mdash; California gas appliance restrictions, prescriptive efficiency floors</li>
+            <li><Em>CSA B55.1 / B55.2</Em> &mdash; drainwater heat recovery (DWHR) effectiveness rating method</li>
+            <li><Em>NEC 220.83 / IFGC Ch. 3-4 / IFGC §503</Em> &mdash; diversity, combustion air, venting</li>
+          </ul>
+          <H4>Performance ratings &amp; programs</H4>
+          <ul>
+            <li><Em>AHRI Directory 1300 + 1700</Em> &mdash; residential and commercial water heater FHR / UEF / capacity</li>
+            <li><Em>AHRI 1230</Em> &mdash; hydronic fan coil performance</li>
+            <li><Em>NEEA Advanced Water Heating Specification (AWHS)</Em> &mdash; HPWH operating limits, low-ambient performance</li>
+            <li><Em>ENERGY STAR Multifamily New Construction (MFNC) v1.2</Em> &mdash; in-unit combi HPWH compliance path</li>
+            <li><Em>NYSERDA Multifamily HPWH Guidance</Em> (2022 + 2024) &mdash; central HPWH design and field performance</li>
+          </ul>
+          <H4>Field studies &amp; emission factors</H4>
+          <ul>
             <li><Em>EPA eGRID 2022</Em> &mdash; subregion electricity emission factors</li>
             <li><Em>NOAA Climate Normals (1991&ndash;2020)</Em> &mdash; HDD65, annual avg temperatures</li>
-            <li><Em>DOE Uniform Energy Factor</Em> (UEF) test procedure &mdash; AHRI Directory 1300 &amp; 1700</li>
-            <li><Em>AHRI 1230</Em> &mdash; hydronic fan coil performance</li>
-            <li><Em>AHRI 1300</Em> &mdash; residential water heater FHR and UEF</li>
-            <li><Em>AHRI 1700</Em> &mdash; commercial instantaneous water heater performance</li>
-            <li><Em>NEC 220.83 / IFGC Ch. 3-4 / IFGC §503</Em> &mdash; diversity, combustion air, venting</li>
-            <li><Em>NEEA Advanced Water Heater Specification</Em> &mdash; HPWH operating limits</li>
+            <li>
+              <Em>NREL / PNNL MF HPWH Field Studies</Em> &mdash; central HPWH measured performance,
+              recirc-loss validation
+            </li>
+            <li>
+              <Em>ACEEE Multifamily Distribution Studies</Em> &mdash; per-floor and demand-control
+              recirc savings
+            </li>
             <li>
               <Em>Burch &amp; Christensen (2007)</Em>, NREL/TP-550-41329 &mdash; monthly ground
-              water temperature model
+              water temperature model (climate-zone inlet)
+            </li>
+          </ul>
+          <H4>Specialty central systems (Phase F + G)</H4>
+          <ul>
+            <li>
+              <Em>SHARC International + IEA HPT Annex 51</Em> &mdash; wastewater heat pump source
+              temperatures and field COPs
+            </li>
+            <li>
+              <Em>ICF International CHP Installation Database (2023)</Em> &mdash; cogen capex
+              ranges by size class
+            </li>
+            <li>
+              <Em>DOE CHP Technology Characterization</Em> &mdash; heat-to-power ratios,
+              utilization factors, run-hour economics
+            </li>
+            <li>
+              <Em>IGSHPA Design Guide</Em> &mdash; ground-loop sizing, capex per nameplate kW
             </li>
           </ul>
         </Prose>

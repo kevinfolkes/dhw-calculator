@@ -39,6 +39,8 @@ const BEST_FOR: Record<SystemTypeKey, string> = {
     "Cold-climate electrification (4A+). HPWH carries shoulder seasons; gas backup handles winter peaks and rapid recovery.",
   central_steam_hx:
     "Buildings on district steam (Con Ed-style) or with an existing steam plant — common in NYC, Boston, Chicago older stock.",
+  central_chp:
+    "Mid-rise + high-rise MF with year-round high electric and DHW load. CHP makes sense when run hours stay above ~5,000/yr and the building can either consume or net-meter the electric output.",
   inunit_gas_tank:
     "Per-apartment gas tank with tenant-paid utilities. Standard for low-rise + townhomes.",
   inunit_gas_tankless:

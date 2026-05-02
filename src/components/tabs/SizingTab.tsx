@@ -24,6 +24,9 @@ export function SizingTab({ result }: { result: CalcResult }) {
   const isCentralPerFloor = result.perFloorPerZoneKW > 0;
   const isCentralHRC = result.hrcCapacityBTUH > 0;
   const isCentralWastewaterHP = result.wastewaterEffectiveCOP > 0;
+  const isCentralCHP = result.chpHeatRecoveryBTUH > 0;
+  const isGroundLoopActive =
+    result.hpwhSourceMode === "ground_loop" && result.hpwhEffectiveSourceTempF > 0;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {isCentralHybrid && (
@@ -144,6 +147,66 @@ export function SizingTab({ result }: { result: CalcResult }) {
               label="vs air-source HPWH"
               value={`${((result.wastewaterEffectiveCOP / Math.max(0.5, result.cop) - 1) * 100).toFixed(0)}%`}
               sub="COP advantage at design"
+              accent="var(--accent-emerald)"
+            />
+          </Grid>
+        </Card>
+      )}
+
+      {isCentralCHP && (
+        <Card accent="#d8a87a">
+          <CardHeader>
+            <CardTitle>CHP Heat Recovery Coverage</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard
+              label="Recovered heat"
+              value={fmt(result.chpHeatRecoveryBTUH / 1000, 1)}
+              unit="MBH"
+              sub="while running (electric kW × HTP × 3412)"
+              accent="#d8a87a"
+            />
+            <MetricCard
+              label="Annual contribution"
+              value={fmt(result.chpAnnualContributionBTU / 1000000, 1)}
+              unit="MBTU/yr"
+              sub={`${(result.chpCoverageFraction * 100).toFixed(0)}% of DHW load (after 80% utilization)`}
+              accent="#d8a87a"
+            />
+            <MetricCard
+              label="Electric generated"
+              value={fmt(result.chpAnnualElectricGeneratedKWh / 1000, 0)}
+              unit="MWh/yr"
+              sub="building electric account (not DHW)"
+              accent="var(--accent-emerald)"
+            />
+          </Grid>
+        </Card>
+      )}
+
+      {isGroundLoopActive && (
+        <Card accent="#7dd3a3">
+          <CardHeader>
+            <CardTitle>Ground-Loop HPWH Source Coupling</CardTitle>
+          </CardHeader>
+          <Grid cols={3}>
+            <MetricCard
+              label="Source temp"
+              value={fmt(result.hpwhEffectiveSourceTempF, 0)}
+              unit="°F"
+              sub="constant year-round (vs mech-room air)"
+              accent="#7dd3a3"
+            />
+            <MetricCard
+              label="Annual COP"
+              value={result.annualCOP.toFixed(2)}
+              sub="warmer winter source lifts seasonal COP"
+              accent="var(--accent-emerald)"
+            />
+            <MetricCard
+              label="Capacity factor"
+              value={result.capFactor.toFixed(2)}
+              sub="no winter capacity derate"
               accent="var(--accent-emerald)"
             />
           </Grid>

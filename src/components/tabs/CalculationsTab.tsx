@@ -46,6 +46,9 @@ export function CalculationsTab({ inputs, result }: Props) {
   const isCentralPerFloor = inputs.systemType === "central_per_floor";
   const isCentralHRC = inputs.systemType === "central_hrc";
   const isCentralWastewaterHP = inputs.systemType === "central_wastewater_hp";
+  const isCentralCHP = inputs.systemType === "central_chp";
+  const isGroundLoopActive =
+    result.hpwhSourceMode === "ground_loop" && result.hpwhEffectiveSourceTempF > 0;
   const isGasTank = inputs.systemType === "inunit_gas_tank";
   const isGasCombi = inputs.systemType === "inunit_combi_gas";
   const isGasTankless = inputs.systemType === "inunit_gas_tankless";
@@ -627,6 +630,75 @@ export function CalculationsTab({ inputs, result }: Props) {
             </Prose>
           </>
         )}
+        {isCentralCHP && (
+          <>
+            <Prose>
+              Cogeneration recovers waste heat from a natural-gas microturbine or
+              reciprocating engine generator (jacket water + exhaust HX). Recovered
+              heat covers part of the DHW load year-round; the displaced grid
+              electricity is consumed (or net-metered) by the building. CHP fuel use
+              is counted against the building electric account, NOT the DHW account
+              — only backup gas is attributable to DHW.
+            </Prose>
+            <Formula>
+              recovery_BTUH = electric_kW × heat_to_power × 3412 ={" "}
+              {inputs.chpElectricKW} × {inputs.chpHeatToPowerRatio.toFixed(2)} × 3412 ={" "}
+              <Result>{fmt(result.chpHeatRecoveryBTUH)}</Result> BTU/hr
+            </Formula>
+            <Formula>
+              annual_recovery_BTU = recovery_BTUH × run_hours ×
+              utilization_factor (0.80) ={" "}
+              <Result>{fmt(result.chpAnnualContributionBTU / 1000000, 1)}</Result> MBTU/yr
+              (capped at DHW load)
+            </Formula>
+            <Formula>
+              coverage_fraction = annual_recovery_BTU ÷ annual_DHW_BTU ={" "}
+              <Result>{(result.chpCoverageFraction * 100).toFixed(1)}%</Result>
+            </Formula>
+            <Formula>
+              backup_gas_therms = (annual_DHW_BTU − recovery_BTU) ÷ (gas_η × 100,000) ={" "}
+              <Result>{fmt(result.annualGasTherms)}</Result> therms/yr
+            </Formula>
+            <Formula>
+              electric_generated_kWh = electric_kW × run_hours ={" "}
+              {inputs.chpElectricKW} × {inputs.chpAnnualRunHours} ={" "}
+              <Result>{fmt(result.chpAnnualElectricGeneratedKWh)}</Result> kWh/yr
+              (electric account)
+            </Formula>
+            <Prose>
+              Sources: ASHRAE Apps Ch. 7 (Combined Heat and Power); EPA CHP Catalog
+              of Technologies (2017); DOE CHP Technology Characterization. Real
+              archetypes: 35 kW Yanmar CP35D / Aisin GECC60A2 / EnerTwin; 75 kW
+              Capstone C65 ICHP / Honda MCHP / Tecogen Inverde 75. Below ~5,000
+              run hours/yr the cogen payback collapses.
+            </Prose>
+          </>
+        )}
+        {isGroundLoopActive && (
+          <>
+            <Prose>
+              Ground-loop coupling (Phase G modifier) replaces the air-coupled
+              mech-room ambient with a near-constant{" "}
+              {result.hpwhEffectiveSourceTempF.toFixed(0)}°F shallow vertical or
+              horizontal ground loop. Eliminates winter capacity derate and lifts
+              annual COP — typical 15–25% kWh savings vs. air-coupled in cold
+              climates (CZ4A+).
+            </Prose>
+            <Formula>
+              effective_source_temp = {result.hpwhEffectiveSourceTempF.toFixed(0)}°F (year-round)
+            </Formula>
+            <Formula>
+              annual_COP = hpwhCOP(source_temp, inlet, setpoint, refrigerant) × tier_mult ={" "}
+              <Result>{result.annualCOP.toFixed(2)}</Result>
+            </Formula>
+            <Prose>
+              Capex adder: $25,000 base + $1,500/kW-nameplate for loop-field
+              drilling + manifold + glycol charge. Sources: ASHRAE Apps Ch. 35
+              (Geothermal); IGSHPA design guide; Caleffi idronics 41 (HPWH source-
+              side configurations).
+            </Prose>
+          </>
+        )}
         {isCentralWastewaterHP && (
           <>
             <Prose>
@@ -1179,6 +1251,24 @@ export function CalculationsTab({ inputs, result }: Props) {
             kWh = total_BTU ÷ 3412 ÷ wastewater_COP = {fmt(result.annualHPWHKWh_total)} kWh ·{" "}
             <Result>cost {fmtUSD(result.annualHPWHCost)}</Result>
           </Formula>
+        )}
+        {isCentralCHP && (
+          <>
+            <Formula>
+              chp_recovery_BTU = recovery_BTUH × run_hours × 0.80 (utilization) ={" "}
+              <Result>{fmt(result.chpAnnualContributionBTU / 1000000, 1)}</Result> MBTU/yr
+            </Formula>
+            <Formula>
+              backup_gas_therms = (annual_BTU − chp_recovery_BTU) ÷ (gas_η × 100,000) ={" "}
+              <Result>{fmt(result.annualGasTherms)}</Result> therms · cost{" "}
+              <Result>{fmtUSD(result.annualGasCost)}</Result>
+            </Formula>
+            <Formula>
+              chp_electric_generated = electric_kW × run_hours ={" "}
+              <Result>{fmt(result.chpAnnualElectricGeneratedKWh)}</Result> kWh/yr (informational
+              — credited to building electric account, not DHW)
+            </Formula>
+          </>
         )}
         {(isGasTank || isGasCombi) && (
           <Formula>

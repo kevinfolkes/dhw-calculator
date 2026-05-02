@@ -18,6 +18,7 @@ export type SystemTypeKey =
   | "central_per_floor"
   | "central_hrc"
   | "central_wastewater_hp"
+  | "central_chp"
   | "inunit_gas_tank"
   | "inunit_gas_tankless"
   | "inunit_hpwh"
@@ -162,6 +163,18 @@ export const SYSTEM_TYPES: Record<SystemTypeKey, SystemTypeDef> = {
       "Heat pump using sewer/wastewater as a constant-temperature source (~55–65°F year-round). Stable warm source gives much higher COP than air-source HPWH, especially in cold climates. Real installations: Vancouver False Creek, NYC Hudson Yards, Seattle Goodwill HQ.",
     archetypes: "SHARC International Piranha, Huber ThermWin, Lynx Heat Recovery, Therma-Stor Hydraflo",
     color: "#5fa8b8",
+  },
+  central_chp: {
+    label: "Central Cogeneration / micro-CHP + Backup",
+    short: "Central CHP",
+    topology: "central",
+    tech: "gas",
+    hasRecirc: true,
+    hasSpaceHeating: false,
+    description:
+      "Natural-gas-fired internal-combustion engine or microturbine generates electricity AND recovered heat (jacket water + exhaust). Recovered heat covers part of the DHW load year-round; condensing gas backup picks up the shortfall. The displaced grid electricity is counted against the building electric account — full CHP economics require an electric-side credit which is out of scope here.",
+    archetypes: "Yanmar CP35, Aisin GECC35, Capstone C65, Tedom T-Core 75, Honda MCHP",
+    color: "#d3a85f",
   },
   inunit_gas_tank: {
     label: "In-Unit Gas Tank (atmospheric or condensing)",

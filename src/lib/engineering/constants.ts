@@ -289,6 +289,99 @@ export const CASCADE_EFFICIENCY_BONUS_PER_BOILER = 0.01;
 /** Maximum cascade efficiency bonus (~3% — beyond ~4 boilers gains plateau). */
 export const CASCADE_EFFICIENCY_BONUS_CAP = 0.03;
 
+/** Source-coupling mode for HPWH systems. Drives the effective ambient
+ *  temperature the heat pump's compressor sees:
+ *
+ *  - "air_mech_room" (default): mech-room air at climate.mechRoomAnnual
+ *    — current behavior, applies to most central HPWH installations.
+ *  - "ground_loop": shallow vertical or horizontal ground loop at a
+ *    near-constant 50°F year-round. Ground source eliminates winter
+ *    capacity derate and lifts annual COP — typical 15–25% kWh savings
+ *    vs. air-coupled in cold climates (CZ4A+).
+ *
+ *  Applies to central_hpwh, central_hybrid (HPWH leg), and
+ *  central_per_floor. central_wastewater_hp uses its own
+ *  wastewaterSourceTempF; in-unit HPWH systems are always air-coupled
+ *  (closet HPWHs in MF are never ground-coupled).
+ *
+ *  Source: ASHRAE Apps Ch. 35 (Geothermal); IGSHPA design guide;
+ *  Caleffi idronics 41 (HPWH source-side configurations).
+ */
+export type HpwhSourceMode = "air_mech_room" | "ground_loop";
+
+/** Effective ambient temperature seen by a ground-loop-coupled HPWH (°F).
+ *  Shallow vertical or horizontal loops average ~10°F warmer than soil
+ *  surface temp in winter and ~10°F cooler in summer; year-round mean
+ *  matches deep ground temp at the latitude. 50°F is the continental-US
+ *  average; users in extreme climates can override hpwhAmbientF if needed. */
+export const GROUND_LOOP_TEMP_F = 50;
+
+// ---------------------------------------------------------------------------
+// Cogeneration / micro-CHP — Phase G
+//
+// Natural-gas-fired internal-combustion engine or microturbine that
+// generates electricity AND recovered heat. The recovered heat covers some
+// or all of the building's DHW load; the displaced grid electricity is
+// counted against the building electric account, NOT the DHW account
+// (full CHP economics require an electric-side credit which is out of
+// scope for this calculator). Common in hospitals, hotels, and large MF
+// (150+ units) with high year-round simultaneous thermal + electric demand.
+//
+// Two specific sizes per the user's request:
+//   - 35 kW: small reciprocating engine (Yanmar CP35, Aisin GECC35)
+//     typical for 60–150 unit MF.
+//   - 75 kW: small microturbine (Capstone C65, Honda MCHP) or larger
+//     reciprocating engine (Tedom T-Core 75) typical for 150–400 unit MF.
+//
+// Source: ASHRAE Apps Ch. 7 (Combined Heat and Power); EPA CHP Catalog
+// of Technologies (2017); manufacturer cut-sheets.
+// ---------------------------------------------------------------------------
+
+/** Allowable nameplate electric output (kW) for a `central_chp` system.
+ *  Two SKUs only — small reciprocating engine (35 kW) and small
+ *  microturbine / larger recip (75 kW). */
+export const CHP_ELECTRIC_KW_OPTIONS = [35, 75] as const;
+export type ChpElectricKW = (typeof CHP_ELECTRIC_KW_OPTIONS)[number];
+
+/** Default heat-to-power ratio for a CHP unit (recovered thermal BTU/hr per
+ *  electric BTU/hr). Gas microturbines typically 1.5–1.8; reciprocating
+ *  engines 1.6–2.2. Default 1.7 matches a small recip-engine baseline. */
+export const CHP_DEFAULT_HEAT_TO_POWER_RATIO = 1.7;
+
+/** Default annual run hours for a `central_chp` system. CHP plants need
+ *  high uptime to economically pencil out — 7000 hours/year (~80%
+ *  utilization) is typical for MF; below 4000 hr/yr payback collapses. */
+export const CHP_DEFAULT_RUN_HOURS = 7000;
+
+/** Effective utilization factor for CHP recovered heat — fraction of the
+ *  thermal output physically absorbable by the DHW load given winter peak
+ *  vs. summer trough demand variation. Buffer storage helps but isn't
+ *  perfect; ~0.80 reflects typical multifamily field data with reasonable
+ *  buffer storage. Some recovered heat is wasted in shoulder seasons when
+ *  DHW demand is below CHP output (heat dumped to a radiator). */
+export const CHP_THERMAL_UTILIZATION_FACTOR = 0.80;
+
+/** Per-electric-kW installed-cost adder for ground-loop coupling on HPWH
+ *  systems ($/kW-nameplate). Vertical or horizontal ground-loop drilling
+ *  + loop installation is the dominant cost driver. Source: IGSHPA design
+ *  guide; commercial loops at scale ~$1,500/nameplate-kW. */
+export const GROUND_LOOP_COST_PER_KW = 1500;
+
+/** Flat base cost adder for ground-loop coupling on HPWH systems (USD).
+ *  Covers loop-field design, manifold, header, glycol charge, controls.
+ *  Source: IGSHPA design guide ranges + RSMeans 33 21 16. */
+export const GROUND_LOOP_COST_BASE = 25000;
+
+/** Per-electric-kW installed-cost adder for a `central_chp` plant
+ *  ($/kW). Covers turbine + generator + heat-recovery integration +
+ *  permits beyond the base cost. The base cost is size-specific
+ *  (CHP_BASE_COST_BY_KW). Source: ICF International "CHP Installation
+ *  Database" 2023 ranges; DOE CHP technology characterization. */
+export const CHP_BASE_COST_BY_KW: Record<35 | 75, number> = {
+  35: 120000,
+  75: 220000,
+};
+
 /** Returns the seasonal-efficiency bonus (0–0.03) for a given boiler count. */
 export function cascadeEfficiencyBonus(boilerCount: number): number {
   const n = Math.max(1, Math.floor(boilerCount));
