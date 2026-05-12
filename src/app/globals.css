@@ -1,71 +1,128 @@
+/* ─── Stripe-docs middle-ground theme ──────────────────────────────────────
+ * Goal: refined utility — readable like Stripe Docs, dense enough for
+ * engineering data. All sans-serif (drop Fraunces serif), tighter spacing
+ * than the Squarespace tier, but lighter palette than the original navy
+ * dashboard. Clear hierarchy via weight + size, not via font family.
+ *
+ * Typography stack: Manrope as primary sans (already loaded; Inter would
+ * be the first-choice but we already have Manrope and can avoid the extra
+ * font request). JetBrains Mono for inputs + code preserved for engineering
+ * readability of tabular numbers.
+ *
+ * Reverting back to a previous theme is a single-file undo on this CSS —
+ * components consume CSS variables exclusively.
+ * ─────────────────────────────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #F0F2F7;
-  --foreground: #0F1E40;
-  --nav-bg: #0F1E40;
-  --nav-text: rgba(255, 255, 255, 0.85);
-  --card-bg: #ffffff;
-  --card-border: #E2E6EF;
-  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-  --card-radius: 14px;
-  --accent-blue: #1D4ED8;
-  --accent-violet: #7C3AED;
-  --accent-emerald: #059669;
-  --accent-orange: #F97316;
-  --accent-amber: #F59E0B;
-  --accent-red: #DC2626;
-  --accent-blue-bg: rgba(29, 78, 216, 0.08);
-  --accent-violet-bg: rgba(124, 58, 237, 0.08);
-  --accent-emerald-bg: rgba(5, 150, 105, 0.08);
-  --accent-red-bg: rgba(220, 38, 38, 0.08);
-  --accent-amber-bg: rgba(245, 158, 11, 0.08);
-  --text-primary: #0F1E40;
-  --text-secondary: #6B7280;
-  --text-muted: #9CA3AF;
-  --border-light: #E2E6EF;
+  /* Surfaces — Stripe-Docs-like cool grays */
+  --background: #FFFFFF;             /* main content area: pure white */
+  --card-bg: #FFFFFF;
+  --surface-subtle: #F6F8FA;         /* subtle gray (sidebars, callouts) */
+  --surface-muted: #F0F3F7;          /* slightly stronger gray for hovers */
+  --nav-bg: #F6F8FA;                 /* sidebars use the subtle gray */
+  --nav-text: #1A1F36;
+  --nav-text-muted: #697386;
+  --nav-border: #E3E8EE;
+  --topbar-bg: #FFFFFF;
+
+  /* Text — Stripe Docs uses dark blue-black, not pure black */
+  --foreground: #1A1F36;
+  --text-primary: #1A1F36;
+  --text-secondary: #425466;
+  --text-muted: #697386;
+
+  /* Borders — slightly more visible than the Squarespace tier so cards
+   * and tables read clearly at the tighter density */
+  --border-light: #E3E8EE;
+  --card-border: #E3E8EE;
+  --card-shadow: 0 1px 2px rgba(15, 31, 54, 0.04);
+  --card-shadow-hover: 0 4px 12px rgba(15, 31, 54, 0.06);
+  --card-radius: 8px;
+
+  /* Brand — single deep navy. Same as Tier 1 (continuity with the previous
+   * navy sidebar identity) but used more sparingly here — Stripe Docs
+   * reserves accent color for active states + actions, not chrome. */
+  --accent-blue: #1E3A5F;
+  --accent-blue-bg: rgba(30, 58, 95, 0.06);
+
+  /* State accents — desaturated, used sparingly */
+  --accent-emerald: #047857;
+  --accent-emerald-bg: rgba(4, 120, 87, 0.06);
+  --accent-amber: #B45309;
+  --accent-amber-bg: rgba(180, 83, 9, 0.06);
+  --accent-red: #B91C1C;
+  --accent-red-bg: rgba(185, 28, 28, 0.06);
+  --accent-violet: #6D28D9;
+  --accent-violet-bg: rgba(109, 40, 217, 0.06);
+  --accent-orange: #C2410C;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'Manrope', 'Segoe UI', sans-serif;
+  --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Manrope', 'Segoe UI', sans-serif;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #F0F2F7; }
-::-webkit-scrollbar-thumb { background: #C8CFDD; border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+/* Heading defaults — all sans-serif (Stripe-Docs convention). Hierarchy
+ * comes from size + weight, not family. Sizes are docs-tier: clear but
+ * not magazine-loud. */
+h1, h2, h3, h4 {
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+h1 { font-size: clamp(24px, 2.4vw, 30px); line-height: 1.2; letter-spacing: -0.015em; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; font-weight: 600; }
+h4 { font-size: 14px; font-weight: 600; }
 
-/* VoltEdge card */
+/* Slim scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #C8D0DA; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #98A2B0; }
+
+/* ─── Cards ─────────────────────────────────────────────────────────────
+ * Tighter than Squarespace tier (20/24 vs 24/28) but more breathing room
+ * than original (16/22). Subtle shadow, refined border. */
 .ve-card {
-  background: #ffffff;
+  background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
-  padding: 16px 22px;
+  padding: 20px 24px;
 }
 
-/* VoltEdge nav */
 .ve-nav {
   background: var(--nav-bg);
   color: var(--nav-text);
 }
 
+/* Section title — sans-serif, refined weight, no decorative left border.
+ * Carries hierarchy through size + weight alone. */
 .ve-section-title {
-  border-left: 3px solid var(--accent-blue);
-  padding-left: 12px;
-  font-weight: 700;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 600;
   color: var(--text-primary);
   font-size: 15px;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  margin: 0;
 }
 
 /* Pills */
@@ -73,44 +130,47 @@ body {
   background: var(--accent-blue);
   color: #fff;
   border: none;
-  border-radius: 8px;
-  padding: 6px 14px;
+  border-radius: 6px;
+  padding: 6px 12px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
 }
 .ve-pill-inactive {
   background: transparent;
   color: var(--text-secondary);
-  border: none;
-  border-radius: 8px;
-  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 12px;
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .ve-pill-inactive:hover {
   color: var(--text-primary);
-  background: var(--accent-blue-bg);
+  background: var(--surface-subtle);
 }
 
-/* Form controls */
+/* ─── Form controls ─────────────────────────────────────────────────────
+ * Field labels: Stripe Docs uses small caps, slightly looser spacing than
+ * the original. Inputs: 38px effective height — taller than original
+ * (32px) for click ease, but not the 44px Squarespace-tier balloon. */
 .ve-field-label {
   display: block;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
 }
 
 .ve-input, .ve-select {
   width: 100%;
   padding: 8px 12px;
   border: 1px solid var(--border-light);
-  border-radius: 8px;
+  border-radius: 6px;
   background: #fff;
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
@@ -125,27 +185,30 @@ body {
 .ve-select {
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236B7280'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23697386'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 16px;
   padding-right: 34px;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+/* Buttons — Stripe-Docs scale: 36px tall, 6px radius, weight 600 */
 button { transition: all 0.15s ease; }
 
 .ve-btn {
   background: var(--accent-blue);
   color: #fff;
   border: none;
-  border-radius: 8px;
-  padding: 8px 14px;
+  border-radius: 6px;
+  padding: 8px 16px;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: 0;
 }
-.ve-btn:hover { filter: brightness(1.1); }
+.ve-btn:hover { background: #162B47; }
 .ve-btn-secondary {
   background: #fff;
   color: var(--accent-blue);
@@ -154,27 +217,27 @@ button { transition: all 0.15s ease; }
 .ve-btn-secondary:hover { background: var(--accent-blue-bg); }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-in { animation: fadeIn 0.2s ease; }
 
 @keyframes toastSlide {
-  from { opacity: 0; transform: translate(-50%, 10px); }
+  from { opacity: 0; transform: translate(-50%, 8px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 .ve-toast {
   position: fixed;
-  bottom: 24px;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--accent-blue);
+  background: var(--text-primary);
   color: #fff;
   padding: 10px 18px;
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(15, 31, 54, 0.18);
   font-size: 13px;
   font-weight: 500;
   z-index: 50;
-  animation: toastSlide 0.2s ease;
+  animation: toastSlide 0.18s ease;
 }

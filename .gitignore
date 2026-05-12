@@ -8,3 +8,6 @@ dist
 coverage
 *.tsbuildinfo
 next-env.d.ts
+
+# Local IDE / Claude Code session config
+.claude/

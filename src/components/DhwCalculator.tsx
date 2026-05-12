@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Book, Building2, Calculator, ClipboardList, Droplets, FileText, GitCompare, Gauge, Home,
-  LayoutGrid, Sigma, ThermometerSun, type LucideIcon,
+  LayoutGrid, Sigma, ThermometerSun,
 } from "lucide-react";
 import { runCalc } from "@/lib/calc/pipeline";
 import type { DhwInputs } from "@/lib/calc/inputs";
@@ -24,6 +24,8 @@ import { MethodologyTab } from "@/components/tabs/MethodologyTab";
 import { ReportsTab } from "@/components/tabs/ReportsTab";
 import { CompareTab } from "@/components/tabs/CompareTab";
 import { exportDOCX, exportPDF } from "@/lib/export/submittal";
+import { SideTabNav, type SideTab, type SideTabGroup } from "@/components/SideTabNav";
+import { fmt } from "@/lib/utils";
 
 type TabId =
   | "overview"
@@ -41,12 +43,6 @@ type TabId =
   | "reports"
   | "compare";
 
-interface TabDef {
-  id: TabId;
-  label: string;
-  icon: LucideIcon;
-}
-
 export default function DhwCalculator() {
   const { inputs, setInputs, update, shareURL } = useDhwInputs();
   const [tab, setTab] = useState<TabId>("overview");
@@ -55,22 +51,25 @@ export default function DhwCalculator() {
   const result = useMemo(() => runCalc(inputs), [inputs]);
   const sys = SYSTEM_TYPES[inputs.systemType];
 
-  const tabs: TabDef[] = useMemo(() => {
-    // Order enforces a linear flow: each tab's outputs depend only on inputs
-    // chosen in earlier tabs. Equipment selections come before the evaluation
-    // tabs (Current Design, Auto-Size, Energy) that reference them.
-    const base: TabDef[] = [
+  // Grouped tab structure — surfaces the workflow stages DHW actually has:
+  // configure inputs → evaluate against current design / auto-sized
+  // alternatives → read the math / methodology → produce a compliance
+  // submittal or saved report. SideTabNav renders each group with a
+  // collapsible header so users navigating 13 tabs can scope the visible
+  // nav to the stage they're working in.
+  const groups: SideTabGroup<TabId>[] = useMemo(() => {
+    const inputsGroup: SideTab<TabId>[] = [
       { id: "overview", label: "Overview", icon: LayoutGrid },
       { id: "building", label: "Building & System", icon: Building2 },
       { id: "demand", label: "Demand", icon: Droplets },
     ];
     if (sys.topology === "central") {
-      base.push(
+      inputsGroup.push(
         { id: "sizing", label: "Sizing", icon: Gauge },
         { id: "tech", label: "Equipment", icon: ThermometerSun },
       );
     } else {
-      const label =
+      const combiLabel =
         sys.hasSpaceHeating && sys.tech === "hpwh"
           ? "In-Unit Combi HPWH"
           : sys.hasSpaceHeating && sys.tech === "gas"
@@ -80,25 +79,42 @@ export default function DhwCalculator() {
           : sys.tech === "gas"
           ? "In-Unit Gas Tank"
           : "In-Unit DHW";
-      base.push({ id: "combi", label, icon: Home });
+      inputsGroup.push({ id: "combi", label: combiLabel, icon: Home });
     }
-    base.push(
-      { id: "current", label: "Current Design", icon: ClipboardList },
-      { id: "autosize", label: "Auto-Size", icon: Gauge },
-      { id: "energy", label: "Energy Model", icon: Calculator },
-      { id: "calculations", label: "Calculations", icon: Sigma },
-      { id: "methodology", label: "Methodology", icon: Book },
-      { id: "compliance", label: "Compliance", icon: FileText },
-      { id: "reports", label: "Reports", icon: FileText },
-      { id: "compare", label: "Compare", icon: GitCompare },
-    );
-    return base;
+    return [
+      { title: "Inputs", tabs: inputsGroup },
+      {
+        title: "Evaluation",
+        tabs: [
+          { id: "current", label: "Current Design", icon: ClipboardList },
+          { id: "autosize", label: "Auto-Size", icon: Gauge },
+          { id: "energy", label: "Energy Model", icon: Calculator },
+        ],
+      },
+      {
+        title: "Documentation",
+        tabs: [
+          { id: "calculations", label: "Calculations", icon: Sigma },
+          { id: "methodology", label: "Methodology", icon: Book },
+        ],
+      },
+      {
+        title: "Output",
+        tabs: [
+          { id: "compliance", label: "Compliance", icon: FileText },
+          { id: "reports", label: "Reports", icon: FileText },
+          { id: "compare", label: "Compare", icon: GitCompare },
+        ],
+      },
+    ];
   }, [sys]);
 
-  // Keep active tab valid as system type changes
+  // Keep active tab valid as system type changes (the inputs-group content
+  // varies with topology — sizing/equipment for central, combi for in-unit).
   useEffect(() => {
-    if (!tabs.find((t) => t.id === tab)) setTab("overview");
-  }, [tabs, tab]);
+    const allIds = groups.flatMap((g) => g.tabs.map((t) => t.id));
+    if (!allIds.includes(tab)) setTab("overview");
+  }, [groups, tab]);
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -183,196 +199,44 @@ export default function DhwCalculator() {
     }
   };
 
-  const SIDEBAR_WIDTH = 232;
-
   return (
-    <div style={{ minHeight: "100vh", background: "var(--background)", display: "flex" }}>
-      {/* LEFT SIDEBAR ─────────────────────────────────────────────────── */}
-      <aside
-        style={{
-          width: SIDEBAR_WIDTH,
-          minWidth: SIDEBAR_WIDTH,
-          background: "#0F1E40",
-          color: "rgba(255,255,255,0.85)",
-          position: "sticky",
-          top: 0,
-          alignSelf: "flex-start",
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          borderRight: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        {/* Brand header */}
-        <div
-          style={{
-            padding: "18px 18px 14px",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <span style={{ fontSize: 22 }}>💧</span>
-          <div
-            style={{
-              fontWeight: 800,
-              fontSize: 14,
-              color: "#fff",
-              letterSpacing: "-0.01em",
-              lineHeight: 1.25,
-            }}
-          >
-            DHW Sizing
-            <br />
-            Calculator
+    <div
+      style={{
+        background: "var(--background)",
+        display: "flex",
+        alignItems: "stretch",
+        minHeight: "calc(100vh - 48px)",
+      }}
+    >
+      <SideTabNav<TabId>
+        label={{ icon: Droplets, text: "DHW Calculator" }}
+        groups={groups}
+        active={tab}
+        onSelect={setTab}
+        trailing={
+          <div>
+            <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>
+              {sys.short}
+            </div>
+            <div style={{ marginTop: 2 }}>
+              {fmt(result.totalUnits, 0)} units · {result.totalOccupants.toFixed(0)} occ
+            </div>
           </div>
-        </div>
-
-        {/* Nav list */}
-        <nav
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "10px 8px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-          }}
-        >
-          {tabs.map((item, i) => {
-            const Icon = item.icon;
-            const isActive = tab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setTab(item.id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: "none",
-                  cursor: "pointer",
-                  background: isActive ? "rgba(255,255,255,0.10)" : "transparent",
-                  color: isActive ? "#fff" : "rgba(255,255,255,0.60)",
-                  fontSize: 12.5,
-                  fontWeight: isActive ? 700 : 500,
-                  textAlign: "left",
-                  transition: "background 120ms ease, color 120ms ease",
-                  position: "relative",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-                    e.currentTarget.style.color = "rgba(255,255,255,0.85)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.color = "rgba(255,255,255,0.60)";
-                  }
-                }}
-              >
-                {isActive && (
-                  <span
-                    aria-hidden
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      top: 6,
-                      bottom: 6,
-                      width: 3,
-                      background: "#7DD3A3",
-                      borderRadius: "0 3px 3px 0",
-                    }}
-                  />
-                )}
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 9.5,
-                    fontWeight: 700,
-                    color: isActive ? "rgba(125,211,163,0.9)" : "rgba(255,255,255,0.35)",
-                    letterSpacing: "0.08em",
-                    width: 18,
-                    flexShrink: 0,
-                  }}
-                >
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 6,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: isActive
-                      ? "rgba(125,211,163,0.18)"
-                      : "rgba(255,255,255,0.06)",
-                    flexShrink: 0,
-                  }}
-                >
-                  <Icon size={13} />
-                </span>
-                <span
-                  style={{
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Footer: system summary */}
-        <div
-          style={{
-            padding: "14px 18px",
-            borderTop: "1px solid rgba(255,255,255,0.08)",
-            fontSize: 11,
-            lineHeight: 1.5,
-          }}
-        >
-          <div
-            style={{
-              color: "rgba(255,255,255,0.45)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              fontSize: 9.5,
-              fontWeight: 700,
-              marginBottom: 4,
-            }}
-          >
-            Current config
-          </div>
-          <div style={{ color: "rgba(255,255,255,0.92)", fontWeight: 600 }}>{sys.short}</div>
-          <div style={{ color: "rgba(255,255,255,0.55)" }}>
-            {result.totalUnits} {result.totalUnits === 1 ? "unit" : "units"} ·{" "}
-            {result.totalOccupants.toFixed(0)} occ
-          </div>
-        </div>
-      </aside>
-
-      {/* MAIN CONTENT ─────────────────────────────────────────────────── */}
+        }
+      />
+      {/* MAIN CONTENT — flexes to fill remaining width; content stays
+          centered at the usual 1100px max so reading width matches the
+          other calculators. */}
       <main
         style={{
           flex: 1,
-          minWidth: 0, // allow flex child to shrink below content width
-          padding: "24px 32px 48px",
-          maxWidth: 1280,
+          minWidth: 0,
+          padding: "32px 32px 80px",
         }}
         className="animate-fade-in"
         key={tab}
       >
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         {tab === "overview" && <OverviewTab inputs={inputs} update={update} />}
         {tab === "building" && <BuildingTab inputs={inputs} update={update} />}
         {tab === "demand" && <DemandTab inputs={inputs} update={update} result={result} />}
@@ -403,6 +267,7 @@ export default function DhwCalculator() {
           <ReportsTab inputs={inputs} result={result} setInputs={setInputs} />
         )}
         {tab === "compare" && <CompareTab inputs={inputs} result={result} />}
+        </div>
       </main>
 
       {toast && <div className="ve-toast">{toast}</div>}

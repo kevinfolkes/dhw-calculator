@@ -156,32 +156,103 @@ export function OverviewTab({ inputs, update }: Props) {
 
       <Card>
         <CardHeader>
+          <CardTitle>Recently shipped</CardTitle>
+        </CardHeader>
+        <Prose>
+          <p>
+            Phases A–G of the system-type roadmap are complete (engine v0.4.1).
+            The calculator now models 19 DHW system types and four modifier
+            dimensions:
+          </p>
+          <ul style={{ marginLeft: 20, lineHeight: 1.7 }}>
+            <li>
+              <strong>In-unit completeness</strong> — modulating tankless gas
+              combi with buffer tank, electric resistance tank + combi variants
+            </li>
+            <li>
+              <strong>Preheat modifiers</strong> — solar thermal, drainwater heat
+              recovery (DWHR), and combined solar+DWHR — applied uniformly to
+              every base system via a single inlet-lift integration point
+            </li>
+            <li>
+              <strong>Recirculation control modes</strong> — continuous,
+              time-clock (with hours/day input), demand-triggered, and
+              aquastat-modulated, each scaling the recirc loop standby loss
+              per ASHRAE 90.1-2022 §6.5.5
+            </li>
+            <li>
+              <strong>Specialty central</strong> — per-floor decentralized HPWH,
+              heat-recovery chiller integration, wastewater (sewer-source) heat
+              pump, and ground-loop coupled HPWH
+            </li>
+            <li>
+              <strong>Multi-boiler cascade plants</strong> — boiler count,
+              N+1 redundancy, cascade efficiency bonus, and manifold cost
+              premium — for real-world central gas plant configurations
+            </li>
+            <li>
+              <strong>Cogeneration / micro-CHP</strong> — 35 kW and 75 kW
+              packaged units with backup gas accounting (CHP fuel attributed
+              to the building electric account, only backup gas counted as
+              DHW therms)
+            </li>
+            <li>
+              <strong>Reports &amp; Compare</strong> — save scenarios, export
+              to PDF / DOCX / Excel / CSV, and compare up to 4 reports
+              side-by-side with Δ columns
+            </li>
+            <li>
+              <strong>Engineering calibration</strong> — every system cross-
+              validated against published ASHRAE / NEEA / EPA / NREL ranges,
+              43 calibration assertions running in CI (see{" "}
+              <code>docs/calibration.md</code>)
+            </li>
+          </ul>
+        </Prose>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>What&apos;s not yet modeled</CardTitle>
         </CardHeader>
         <Prose>
           <p>
-            The taxonomy is being expanded under a phased roadmap. Coming soon:
+            The DHW taxonomy is feature-complete; the next horizon expands
+            beyond DHW into the broader multifamily energy picture:
           </p>
           <ul style={{ marginLeft: 20, lineHeight: 1.7 }}>
             <li>
-              <strong>In-unit completeness</strong> — tankless gas combi (modulating + buffer
-              tank), electric resistance variants
+              <strong>Cooling loads + annual energy across all end uses</strong>{" "}
+              — pivot from a DHW calculator to a full multifamily load modeler
+              (heating, cooling, plug, lighting, ventilation)
             </li>
             <li>
-              <strong>Preheat modifiers</strong> — solar thermal, drainwater heat recovery
-              (DWHR) — apply to any base system
+              <strong>Monthly seasonal source temps for HPWH</strong> — current
+              ground-loop / mech-room model uses annual averages; a monthly
+              seasonal model would credit ground-loop with winter-stability
+              benefit in cold climates
             </li>
             <li>
-              <strong>Recirculation control modes</strong> — continuous, time-clock, demand-
-              triggered, aquastat-modulated
+              <strong>CHP exhaust temperature matching</strong> — current
+              recovery model is bounded only by load and runtime, not by
+              thermal-grade match between CHP exhaust and DHW setpoint
             </li>
             <li>
-              <strong>Specialty central</strong> — per-floor decentralized HPWH, heat-recovery
-              chiller integration, wastewater heat-pump
+              <strong>Hybrid &amp; HRC dual-fuel rollups in Compare</strong> —
+              the monthly model carries a single primary unit (therms or kWh);
+              the secondary stream (e.g. HRC&apos;s electric draw alongside
+              backup gas) doesn&apos;t surface as its own row in the Compare
+              tab yet
             </li>
             <li>
-              <strong>Cooling loads + annual energy across all end uses</strong> — pivots this
-              from a DHW calculator to a full multifamily load modeler
+              <strong>Incentive / rebate stacking</strong> — IRA 25C, utility
+              programs, NEEA AWHS uplift, NYSERDA rebates would let lifecycle
+              cost reflect real after-incentive economics
+            </li>
+            <li>
+              <strong>Distribution &amp; service upgrades</strong> — capex for
+              electric panel / feeder upgrades when retrofitting from gas to
+              HPWH (especially per-apartment), gas-line removal credit
             </li>
           </ul>
         </Prose>

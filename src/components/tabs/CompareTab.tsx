@@ -3,8 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { SelectInput } from "@/components/ui/Field";
-import { listReports, type SavedReport } from "@/lib/reports/storage";
-import { ENGINE_VERSION } from "@/lib/version";
+import {
+  listReports,
+  primaryScenario,
+  type SavedReport,
+} from "@/lib/reports/storage";
+import { ENGINE_VERSIONS } from "@/lib/version";
 import { fmt, fmtUSD } from "@/lib/utils";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import type { DhwInputs } from "@/lib/calc/inputs";
@@ -37,6 +41,7 @@ interface ColumnData {
  */
 export function CompareTab({ inputs, result }: Props) {
   const [reports, setReports] = useState<SavedReport[]>([]);
+  const [hydrated, setHydrated] = useState(false);
   const [slots, setSlots] = useState<SlotPick[]>(() => [
     CURRENT_KEY,
     NONE_KEY,
@@ -44,8 +49,35 @@ export function CompareTab({ inputs, result }: Props) {
     NONE_KEY,
   ]);
 
+  // On mount: hydrate the report library from localStorage. The DHW-embedded
+  // CompareTab only surfaces DHW reports — the centralized cross-domain
+  // /compare page handles non-DHW. If the user has saved DHW reports,
+  // prepopulate the slot picks so the comparison renders immediately —
+  // otherwise the user lands on a blank "pick at least 2 reports" screen.
+  // With 1 saved report we pair it against the live scenario; with 2+ we
+  // show the two most-recent reports head-to-head with a Δ column.
   useEffect(() => {
-    setReports(listReports());
+    const list = listReports().filter((r) => r.domain === "dhw");
+    setReports(list);
+    if (list.length >= 2) {
+      setSlots([list[0].id, list[1].id, NONE_KEY, NONE_KEY]);
+    } else if (list.length === 1) {
+      setSlots([CURRENT_KEY, list[0].id, NONE_KEY, NONE_KEY]);
+    }
+    setHydrated(true);
+  }, []);
+
+  // Re-pull on tab focus / storage events so saving a report in another tab
+  // (or in the Reports tab in this same window between mounts) shows up here
+  // without a manual page reload.
+  useEffect(() => {
+    const refresh = () => setReports(listReports().filter((r) => r.domain === "dhw"));
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
   }, []);
 
   const setSlot = (idx: number, value: SlotPick) => {
@@ -77,18 +109,27 @@ export function CompareTab({ inputs, result }: Props) {
           label: "Current scenario",
           inputs,
           results: result,
-          engineVersion: ENGINE_VERSION,
+          engineVersion: ENGINE_VERSIONS.dhw,
           savedAt: null,
         });
         continue;
       }
       const r = reports.find((x) => x.id === slot);
       if (!r) continue;
+      // Pull DHW inputs/results from the report's primary scenario. For
+      // sizing snapshots there's only one scenario; for retrofit reports
+      // (current + proposed) this surfaces the "current" leg by default —
+      // a future enhancement will let the slot picker target a specific
+      // scenario by label.
+      const first = primaryScenario(r) as
+        | { inputs: DhwInputs; results: CalcResult; label: string }
+        | null;
+      if (!first) continue;
       cols.push({
         key: r.id,
         label: r.name,
-        inputs: r.inputs,
-        results: r.results,
+        inputs: first.inputs,
+        results: first.results,
         engineVersion: r.engineVersion,
         savedAt: r.updatedAt,
       });
@@ -140,9 +181,27 @@ export function CompareTab({ inputs, result }: Props) {
               textAlign: "center",
               fontSize: 13,
               color: "var(--text-muted)",
+              lineHeight: 1.6,
             }}
           >
-            Pick at least 2 reports above to start comparing.
+            {!hydrated ? (
+              "Loading saved reports…"
+            ) : reports.length === 0 ? (
+              <>
+                You have no saved reports yet. Go to the <strong>Reports</strong> tab,
+                configure a scenario, name it, and click <strong>Save Report</strong>.
+                Save at least two scenarios (or one scenario + your live working
+                scenario) to use Compare.
+              </>
+            ) : (
+              <>
+                {reports.length} saved {reports.length === 1 ? "report" : "reports"}{" "}
+                detected. Pick a scenario in at least two of the slot dropdowns above
+                to render the side-by-side view. The default <em>Current scenario</em>{" "}
+                slot uses your live inputs — pair it with any saved report for an
+                instant Δ comparison.
+              </>
+            )}
           </div>
         </Card>
       ) : (
@@ -285,7 +344,7 @@ function HeaderBlock({
       <Row gridTemplate={gridTemplate}>
         <div style={labelStyle}>Engine version</div>
         {columns.map((c) => {
-          const stale = c.engineVersion !== ENGINE_VERSION;
+          const stale = c.engineVersion !== ENGINE_VERSIONS.dhw;
           return (
             <div key={c.key} style={cellStyle}>
               <span
@@ -569,28 +628,28 @@ function buildSections(columns: ColumnData[]): SectionDef[] {
           unit: "therms",
           digits: 0,
           direction: "lower",
-          values: get((c) => c.results.annualGasTherms),
+          values: get((c) => annualTherms(c.results)),
         },
         {
           label: "Annual electric",
           unit: "kWh",
           digits: 0,
           direction: "lower",
-          values: get((c) => totalAnnualKWh(c.results)),
+          values: get((c) => annualKWh(c.results)),
         },
         {
           label: "Annual cost",
           digits: 0,
           direction: "lower",
           currency: true,
-          values: get((c) => totalAnnualCost(c.results)),
+          values: get((c) => annualCost(c.results)),
         },
         {
           label: "Annual CO₂",
           unit: "lb",
           digits: 0,
           direction: "lower",
-          values: get((c) => totalAnnualCarbon(c.results)),
+          values: get((c) => annualCarbon(c.results)),
         },
         {
           label: "Annual COP / UEF",
@@ -659,29 +718,47 @@ function buildSections(columns: ColumnData[]): SectionDef[] {
   ];
 }
 
-function totalAnnualKWh(r: CalcResult): number {
-  // Combi systems express kWh through `combi.combiTotalAnnualKWh`; central HPWH
-  // uses `annualHPWHKWh_total`. Resistance + HPWH may both contribute. Sum
-  // anything we have so the comparison is fair across system types.
-  const central = (r.annualHPWHKWh_total ?? 0) + (r.annualResistanceKWh ?? 0);
-  const combi = r.combi?.combiTotalAnnualKWh ?? 0;
-  return central + combi;
+// ─── Annual rollup helpers ────────────────────────────────────────────────
+//
+// CRITICAL CORRECTNESS NOTE:
+// The pipeline's `annualGasTherms`, `annualResistanceKWh`, and
+// `annualHPWHKWh_total` fields are NOT system-specific actuals — they are
+// "what-if this load were served by X technology" comparison fields,
+// computed unconditionally from `annualTotalBTU`. For pure-tech systems they
+// produce nearly identical numbers regardless of which system is configured
+// (only the building inputs change them), which made the Compare tab show
+// the same energy / cost across every scenario.
+//
+// The monthly model (`r.monthly.monthlyAnnualCost`,
+// `r.monthly.monthlyAnnualCarbon`, `r.monthly.monthlyAnnualEnergy` paired
+// with `r.monthly.monthlyUnit`) is the canonical system-specific actual —
+// the same source the smoke-report uses. Every Compare column now reads
+// from there, so two scenarios on the same building correctly produce
+// different energy / cost / carbon when the system type or efficiency
+// inputs differ.
+
+function annualCost(r: CalcResult): number {
+  return r.monthly?.monthlyAnnualCost ?? 0;
 }
 
-function totalAnnualCost(r: CalcResult): number {
-  const gas = r.annualGasCost ?? 0;
-  const elec = (r.annualHPWHCost ?? 0) + (r.annualResistanceCost ?? 0);
-  const combi = r.combi?.combiTotalAnnualCost ?? 0;
-  // monthly model already rolls combi cost into combiTotalAnnualCost; for
-  // central systems the `annual*Cost` fields are the canonical numbers.
-  return gas + elec + combi;
+function annualCarbon(r: CalcResult): number {
+  return r.monthly?.monthlyAnnualCarbon ?? 0;
 }
 
-function totalAnnualCarbon(r: CalcResult): number {
-  const gas = r.annualGasCarbon ?? 0;
-  const elec = (r.annualHPWHCarbon ?? 0) + (r.annualResistanceCarbon ?? 0);
-  const combi = r.combi?.combiTotalAnnualCarbon ?? 0;
-  return gas + elec + combi;
+function annualTherms(r: CalcResult): number | null {
+  const m = r.monthly;
+  if (!m) return null;
+  if (m.monthlyUnit === "therms") return m.monthlyAnnualEnergy ?? 0;
+  // Pure-electric system — no gas consumed for DHW. Show "0" rather than
+  // "—" so cells line up; lower-better highlighting still works.
+  return 0;
+}
+
+function annualKWh(r: CalcResult): number | null {
+  const m = r.monthly;
+  if (!m) return null;
+  if (m.monthlyUnit === "kWh") return m.monthlyAnnualEnergy ?? 0;
+  return 0;
 }
 
 /** Pick the most relevant efficiency metric for the column's system type. */

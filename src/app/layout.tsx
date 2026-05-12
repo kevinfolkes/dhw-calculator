@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
-  title: "DHW Sizing Calculator — Multifamily Water Heating",
+  title: "Multifamily Building Energy Calculator",
   description:
-    "ASHRAE-based sizing and energy modeling for multifamily domestic hot water systems. Central and in-unit, gas and all-electric.",
+    "Engineering-grade sizing and retrofit-comparison calculators for every major multifamily building end use — DHW, lighting, HVAC, and more. ASHRAE / NEEA / EPA / NREL calibrated.",
 };
 
 export default function RootLayout({
@@ -18,7 +19,7 @@ export default function RootLayout({
         className="min-h-full flex flex-col"
         style={{ fontFamily: "'Manrope', 'Segoe UI', sans-serif" }}
       >
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

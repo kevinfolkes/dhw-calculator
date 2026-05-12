@@ -133,6 +133,17 @@ export function runCalc(input: DhwInputs): CalcResult {
   });
   const { peakHourGPH: peakHourDemand, peakDayGPH: peakDayDemand, avgDayGPH: avgDayDemand } = dem;
 
+  // Per-unit average daily DHW (gallons), derived from the active demand
+  // method. Used by every in-unit and combi per-apartment energy calc so a
+  // change in `gpcd`, `occupantsPerUnit`, or `demandMethod` flows through
+  // both the building-aggregate annual roll-up AND the monthly + per-unit
+  // tabs consistently. When method = "ashrae" this is mathematically
+  // identical to `ASHRAE_APT_DEMAND[occupancyProfile].avg` so the default
+  // scenario produces unchanged results — preserving regression baselines
+  // for every saved report. When method = "occupancy" or "hunter" this
+  // properly scales with the user's gpcd × occupants or fixture mix.
+  const perUnitAvgDailyGal = totalUnits > 0 ? avgDayDemand / totalUnits : 0;
+
   // ---- PREHEAT LIFT — annual average (drives design-day calcs) ----------
   // With demand resolved, compute the annual-averaged preheat lift and patch
   // `effectiveInletF` so all downstream design-day math sees a realistic
@@ -504,10 +515,20 @@ export function runCalc(input: DhwInputs): CalcResult {
 
   const needsFullResistanceBackup = climate.heatDB < hpwhOpLimitF;
 
-  const dhwAvg_0BR = ashraeProfile.avg;
-  const dhwAvg_1BR = ashraeProfile.avg;
-  const dhwAvg_2BR = ashraeProfile.avg;
-  const dhwAvg_3BR = ashraeProfile.avg;
+  // Per-bedroom-count daily DHW (gallons). When the user picks the
+  // occupancy demand method, scale per-unit linearly with the bedroom-
+  // typical occupant count so a 3BR uses more than a studio (matches the
+  // physical intuition: more occupants → more DHW). For ashrae and hunter
+  // methods, fall back to the building-uniform per-unit average — those
+  // methods don't carry per-bedroom occupant data of their own.
+  const dhwAvg_0BR =
+    demandMethod === "occupancy" ? occupantsPerUnit.br0 * gpcd * 0.85 : perUnitAvgDailyGal;
+  const dhwAvg_1BR =
+    demandMethod === "occupancy" ? occupantsPerUnit.br1 * gpcd * 0.85 : perUnitAvgDailyGal;
+  const dhwAvg_2BR =
+    demandMethod === "occupancy" ? occupantsPerUnit.br2 * gpcd * 0.85 : perUnitAvgDailyGal;
+  const dhwAvg_3BR =
+    demandMethod === "occupancy" ? occupantsPerUnit.br3 * gpcd * 0.85 : perUnitAvgDailyGal;
 
   const annualHeatingBTU_0BR = (24 * climate.hdd65 * heatingLoad_0BR) / designDeltaT;
   const annualHeatingBTU_1BR = (24 * climate.hdd65 * heatingLoad_1BR) / designDeltaT;
@@ -604,7 +625,11 @@ export function runCalc(input: DhwInputs): CalcResult {
   const gasTankRiseF = gasTankSetpointF - effectiveInletF;
   const gasTankOutputMBH = gasTankInputMBH * gasTankUEF;
   const gasTankRecoveryGPH = (gasTankOutputMBH * 1000) / (8.33 * gasTankRiseF);
-  const gasTankAnnualBTU_perUnit = ashraeProfile.avg * 365 * 8.33 * gasTankRiseF;
+  // Per-unit annual DHW BTU is occupancy-aware: when method=occupancy the
+  // per-unit daily gallons properly scales with gpcd × occupants. When
+  // method=ashrae the value mathematically reduces to ASHRAE_APT_DEMAND.avg
+  // so the historic default-scenario therms/unit is preserved.
+  const gasTankAnnualBTU_perUnit = perUnitAvgDailyGal * 365 * 8.33 * gasTankRiseF;
   const gasTankAnnualTherms_perUnit = gasTankAnnualBTU_perUnit / (gasTankUEF * 100000);
   const gasTankBuildingTherms = gasTankAnnualTherms_perUnit * totalUnits;
   const gasTankBuildingCost = gasTankBuildingTherms * gasRate;
@@ -631,7 +656,7 @@ export function runCalc(input: DhwInputs): CalcResult {
   const tanklessRequiredBTUH = tanklessPeakGPM * 500 * tanklessDesignRiseF;
   const tanklessCapacityAtRise = (tanklessSpec.input_mbh * tanklessSpec.uef * 1000) / (500 * tanklessDesignRiseF);
   const tanklessMetsDemand = tanklessCapacityAtRise >= tanklessPeakGPM;
-  const tanklessAnnualBTU_perUnit = ashraeProfile.avg * 365 * 8.33 * (gasTanklessSetpointF - effectiveInletF);
+  const tanklessAnnualBTU_perUnit = perUnitAvgDailyGal * 365 * 8.33 * (gasTanklessSetpointF - effectiveInletF);
   const tanklessAnnualTherms_perUnit = tanklessAnnualBTU_perUnit / (tanklessSpec.uef * 100000);
   const tanklessBuildingTherms = tanklessAnnualTherms_perUnit * totalUnits;
   const tanklessBuildingCost = tanklessBuildingTherms * gasRate;
@@ -766,7 +791,7 @@ export function runCalc(input: DhwInputs): CalcResult {
       ? gasTanklessSetpointF - effectiveInletF
       : gasTankSetpointF - effectiveInletF
     : combiDHWSetpointF - effectiveInletF;
-  const inUnitAnnualDHWBTU_perUnit = ashraeProfile.avg * 365 * 8.33 * inUnitRiseF;
+  const inUnitAnnualDHWBTU_perUnit = perUnitAvgDailyGal * 365 * 8.33 * inUnitRiseF;
   const inUnitAnnualDHWBTU_total = inUnitAnnualDHWBTU_perUnit * totalUnits;
 
   const monthly: MonthlyRow[] = MONTHS.map((mName, m) => {
@@ -817,7 +842,7 @@ export function runCalc(input: DhwInputs): CalcResult {
         : gasTankSetpointF
       : combiDHWSetpointF;
     const monthDHW_rise_inunit = setptInUnit - monthInlet;
-    const monthDHWBTU_inunit_perUnit = ashraeProfile.avg * 8.33 * monthDHW_rise_inunit * daysInMonth;
+    const monthDHWBTU_inunit_perUnit = perUnitAvgDailyGal * 8.33 * monthDHW_rise_inunit * daysInMonth;
     const monthDHWBTU_inunit_total = monthDHWBTU_inunit_perUnit * totalUnits;
 
     const monthCOP_central = hpwhCOP(monthMechRoom, monthInlet, storageSetpointF, hpwhRefrigerant) * hpwhTierMult;

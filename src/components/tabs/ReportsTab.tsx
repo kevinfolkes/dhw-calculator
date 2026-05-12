@@ -22,14 +22,20 @@ import {
   exportLibrary,
   importLibrary,
   listReports,
+  primaryScenario,
   saveReport,
   updateReport,
   type SavedReport,
 } from "@/lib/reports/storage";
-import { ENGINE_VERSION } from "@/lib/version";
+import { ENGINE_VERSIONS } from "@/lib/version";
 import type { DhwInputs } from "@/lib/calc/inputs";
 import type { CalcResult } from "@/lib/calc/types";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
+
+/** Type-narrow to a DHW report whose first scenario carries DHW inputs/
+ *  results. The DHW-embedded ReportsTab only renders DHW reports — the
+ *  cross-domain centralized /reports page handles other domains. */
+type DhwReport = SavedReport<DhwInputs, CalcResult>;
 
 interface Props {
   inputs: DhwInputs;
@@ -53,9 +59,11 @@ export function ReportsTab({ inputs, result, setInputs }: Props) {
   const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Hydrate list once on mount (storage is browser-only).
+  // Hydrate list once on mount (storage is browser-only). The DHW-embedded
+  // ReportsTab only surfaces reports tagged `domain === "dhw"` — the
+  // centralized cross-domain /reports page handles non-DHW reports.
   useEffect(() => {
-    setReports(listReports());
+    setReports(listReports().filter((r) => r.domain === "dhw"));
   }, []);
 
   // Auto-dismiss inline flash messages.
@@ -75,7 +83,7 @@ export function ReportsTab({ inputs, result, setInputs }: Props) {
     return () => clearTimeout(t);
   }, [importSummary]);
 
-  const refresh = () => setReports(listReports());
+  const refresh = () => setReports(listReports().filter((r) => r.domain === "dhw"));
 
   const handleSave = () => {
     const trimmed = name.trim();
@@ -88,7 +96,13 @@ export function ReportsTab({ inputs, result, setInputs }: Props) {
   };
 
   const handleLoad = (r: SavedReport) => {
-    setInputs(r.inputs);
+    // DHW reports always have at least one scenario whose `inputs` are
+    // DhwInputs (single-scenario sizing snapshot) or — eventually for
+    // retrofit comparisons — current-vs-proposed. Load the first scenario
+    // (the "current" leg in retrofit reports, the only leg in snapshots).
+    const first = primaryScenario<DhwInputs, CalcResult>(r as DhwReport);
+    if (!first) return;
+    setInputs(first.inputs);
     setLoadedFlash(`Loaded "${r.name}"`);
   };
 
@@ -391,9 +405,17 @@ function ReportRow({ report, onLoad, onDelete, onRename }: RowProps) {
     if (editing) inputRef.current?.focus();
   }, [editing]);
 
-  const sysLabel = SYSTEM_TYPES[report.inputs.systemType]?.label ?? report.inputs.systemType;
+  // The DHW-embedded ReportsTab only renders DHW reports (filtered upstream);
+  // pull inputs / results from the primary (first) scenario.
+  const dhwReport = report as DhwReport;
+  const first = primaryScenario(dhwReport);
+  const reportInputs = first?.inputs;
+  const reportResults = first?.results;
+  const sysLabel = reportInputs
+    ? SYSTEM_TYPES[reportInputs.systemType]?.label ?? reportInputs.systemType
+    : "—";
   const dateLabel = new Date(report.updatedAt).toLocaleDateString();
-  const stale = report.engineVersion !== ENGINE_VERSION;
+  const stale = report.engineVersion !== ENGINE_VERSIONS.dhw;
 
   const commitRename = () => {
     const trimmed = draft.trim();
@@ -412,32 +434,36 @@ function ReportRow({ report, onLoad, onDelete, onRename }: RowProps) {
 
   const handleExportPDF = async () => {
     setExportOpen(false);
+    if (!reportInputs || !reportResults) return;
     try {
-      await exportPDF(report.inputs, report.results);
+      await exportPDF(reportInputs, reportResults);
     } catch (e) {
       console.error("[reports] PDF export failed", e);
     }
   };
   const handleExportDOCX = async () => {
     setExportOpen(false);
+    if (!reportInputs || !reportResults) return;
     try {
-      await exportDOCX(report.inputs, report.results);
+      await exportDOCX(reportInputs, reportResults);
     } catch (e) {
       console.error("[reports] DOCX export failed", e);
     }
   };
   const handleExportXLSX = async () => {
     setExportOpen(false);
+    if (!reportInputs || !reportResults) return;
     try {
-      await exportXLSX(report.inputs, report.results);
+      await exportXLSX(reportInputs, reportResults);
     } catch (e) {
       console.error("[reports] XLSX export failed", e);
     }
   };
   const handleExportCSV = () => {
     setExportOpen(false);
+    if (!reportInputs || !reportResults) return;
     try {
-      exportCSV(report.inputs, report.results);
+      exportCSV(reportInputs, reportResults);
     } catch (e) {
       console.error("[reports] CSV export failed", e);
     }
@@ -661,7 +687,7 @@ function StaleChip() {
       }}
       title="Saved with an older engine version — frozen results may be outdated"
     >
-      Stale (current v{ENGINE_VERSION})
+      Stale (current v{ENGINE_VERSIONS.dhw})
     </span>
   );
 }
