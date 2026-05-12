@@ -1,7 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { Card } from "@/components/ui/Card";
+import {
+  Callout,
+  Em,
+  Formula,
+  KVList,
+  Prose,
+  Result,
+  Step,
+  Sub,
+} from "@/components/calculations/Helpers";
 import { fmt, fmtUSD } from "@/lib/utils";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import {
@@ -1346,182 +1355,6 @@ export function CalculationsTab({ inputs, result }: Props) {
           />
         </Step>
       )}
-    </div>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// PRIMITIVES
-// -----------------------------------------------------------------------------
-
-function Step({
-  n,
-  title,
-  subtitle,
-  children,
-}: {
-  n: number;
-  title: string;
-  subtitle?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Card>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--text-muted)",
-            letterSpacing: "0.08em",
-            fontWeight: 700,
-          }}
-        >
-          {String(n).padStart(2, "0")}
-        </span>
-        <h3 className="ve-section-title" style={{ fontSize: 15, margin: 0 }}>
-          {title}
-        </h3>
-        {subtitle && (
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{subtitle}</span>
-        )}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
-    </Card>
-  );
-}
-
-function Prose({ children }: { children: ReactNode }) {
-  return (
-    <p
-      style={{
-        fontSize: 12.5,
-        color: "var(--text-secondary)",
-        lineHeight: 1.7,
-        margin: 0,
-      }}
-    >
-      {children}
-    </p>
-  );
-}
-
-function Em({ children }: { children: ReactNode }) {
-  return (
-    <em
-      style={{
-        fontStyle: "normal",
-        fontWeight: 700,
-        color: "var(--text-primary)",
-      }}
-    >
-      {children}
-    </em>
-  );
-}
-
-function Formula({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        padding: "8px 12px",
-        background: "var(--surface-subtle, rgba(0,0,0,0.02))",
-        borderLeft: "2px solid var(--accent-blue)",
-        borderRadius: 6,
-        fontSize: 12,
-        fontFamily: "var(--font-mono)",
-        color: "var(--text-primary)",
-        lineHeight: 1.7,
-        overflowX: "auto",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Sub({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        padding: "6px 12px",
-        marginLeft: 14,
-        fontSize: 12,
-        fontFamily: "var(--font-mono)",
-        color: "var(--text-secondary)",
-        lineHeight: 1.7,
-        overflowX: "auto",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Result({ children }: { children: ReactNode }) {
-  return (
-    <strong
-      style={{
-        color: "var(--accent-emerald)",
-        fontWeight: 800,
-        fontFamily: "var(--font-mono)",
-      }}
-    >
-      {children}
-    </strong>
-  );
-}
-
-function KVList({ rows }: { rows: Array<[string, string]> }) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "auto 1fr",
-        gap: "4px 16px",
-        fontSize: 12,
-        fontFamily: "var(--font-mono)",
-        padding: "4px 12px",
-      }}
-    >
-      {rows.map(([k, v], i) => (
-        <div key={i} style={{ display: "contents" }}>
-          <div style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>{k}</div>
-          <div style={{ color: "var(--text-primary)" }}>{v}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Callout({ tone, children }: { tone: "ok" | "info" | "warn"; children: ReactNode }) {
-  const palette =
-    tone === "ok"
-      ? { bg: "rgba(5,150,105,0.08)", border: "var(--accent-emerald)", color: "var(--accent-emerald)" }
-      : tone === "warn"
-      ? { bg: "rgba(245,158,11,0.10)", border: "var(--accent-amber)", color: "var(--accent-amber)" }
-      : { bg: "rgba(29,78,216,0.08)", border: "var(--accent-blue)", color: "var(--accent-blue)" };
-  return (
-    <div
-      style={{
-        padding: "8px 12px",
-        background: palette.bg,
-        borderLeft: `3px solid ${palette.border}`,
-        borderRadius: 6,
-        fontSize: 12,
-        lineHeight: 1.6,
-        color: palette.color,
-      }}
-    >
-      {children}
     </div>
   );
 }

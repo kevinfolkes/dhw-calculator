@@ -7,6 +7,7 @@ import {
   type InUnitHvacInputs,
   type InUnitHvacSystemType,
 } from "@/lib/inunit-hvac/inputs";
+import { INUNIT_HVAC_ARCHETYPE_COLORS as COLOR } from "@/lib/chart-palette";
 
 /**
  * Overview / "start here" tab for the in-unit HVAC calculator. Mirrors the
@@ -40,19 +41,6 @@ const BEST_FOR: Record<InUnitHvacSystemType, string> = {
     "Townhouse-style MF, garden apartments, newer mid-rise (since ~2015). Outdoor condenser + indoor AHU + apartment ductwork; single thermostat per apt.",
   central_split_ac_resist:
     "Pre-2010s ducted central installations. Strong retrofit target — drop-in HP replacement keeps the ducts and outdoor pad while cutting heating cost ~60%.",
-};
-
-/** Tile accent color per archetype — desaturated palette aligned with the
- *  rest of the calculator's visual language. */
-const COLOR: Record<InUnitHvacSystemType, string> = {
-  ptac_resistance: "#B45309", // ochre
-  pthp: "#1E3A5F", // brand navy
-  minisplit_hp: "#047857", // emerald
-  minisplit_cool_resist: "#6B7280", // warm gray
-  window_ac_resist: "#525252", // slate
-  ccshp: "#0E7490", // teal
-  central_split_hp: "#0F766E", // dark teal
-  central_split_ac_resist: "#A16207", // dark ochre
 };
 
 /** Compact equipment-spec line shown on each tile — capacity + cooling/

@@ -58,19 +58,7 @@ import { type RetrofitMetrics } from "@/components/SavingsStrip";
 import { MethodologyTab } from "@/components/tabs/lighting/MethodologyTab";
 import { Callout } from "@/components/methodology/Helpers";
 import { TopTabNav } from "@/components/TopTabNav";
-
-/** Per-category color palette for the stacked monthly chart. Toned to
- *  match the editorial Tier-1 palette (desaturated, refined) so the chart
- *  reads as part of the page rather than a separate dashboard widget. */
-const CATEGORY_COLORS: Record<LightingCategory, string> = {
-  corridor: "#1E3A5F",       // brand navy
-  stairwell: "#6D28D9",      // refined violet
-  commonArea: "#047857",     // emerald (desaturated)
-  exteriorSite: "#B45309",   // ochre / amber
-  exteriorFacade: "#C2410C", // deep orange
-  inUnit: "#BE185D",         // deep magenta
-  garageParking: "#525252",  // warm gray
-};
+import { LIGHTING_CATEGORY_COLORS as CATEGORY_COLORS } from "@/lib/chart-palette";
 
 type TabId = "equipment" | "energy" | "retrofit" | "methodology";
 

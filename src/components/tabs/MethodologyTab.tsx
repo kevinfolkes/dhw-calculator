@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 
 /**
@@ -8,8 +8,11 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
  * engineer through every calculation step, every constant, and every data
  * source used by the calculator. Cross-references file paths in src/lib so
  * reviewers can jump straight to the implementation.
+ *
+ * Wrapped in React.memo because the component takes no props — every parent
+ * re-render would otherwise re-render the entire (long-form) tab content.
  */
-export function MethodologyTab() {
+function MethodologyTabInner() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <Card>
@@ -926,3 +929,5 @@ function Table({ head, rows }: { head: string[]; rows: string[][] }) {
     </div>
   );
 }
+
+export const MethodologyTab = memo(MethodologyTabInner);

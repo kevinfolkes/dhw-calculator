@@ -6,7 +6,11 @@
  * and known limitations. Mirrors the lighting MethodologyTab structure so an
  * MEP reviewer can read this page and trust (or challenge) outputs without
  * leaving the app.
+ *
+ * Wrapped in React.memo because the component takes no props — every parent
+ * re-render would otherwise re-render the entire (long-form) tab content.
  */
+import { memo } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import {
   Callout,
@@ -18,7 +22,7 @@ import {
   Table,
 } from "@/components/methodology/Helpers";
 
-export function MethodologyTab() {
+function MethodologyTabInner() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <h1
@@ -868,3 +872,5 @@ export function MethodologyTab() {
     </div>
   );
 }
+
+export const MethodologyTab = memo(MethodologyTabInner);
