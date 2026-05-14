@@ -13,6 +13,7 @@ import { fmt, fmtUSD } from "@/lib/utils";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import type { DhwInputs } from "@/lib/calc/inputs";
 import type { CalcResult } from "@/lib/calc/types";
+import { resolveReportingEfficiency } from "@/lib/calc/derived";
 
 interface Props {
   inputs: DhwInputs;
@@ -761,22 +762,19 @@ function annualKWh(r: CalcResult): number | null {
   return 0;
 }
 
-/** Pick the most relevant efficiency metric for the column's system type. */
+/** Pick the most relevant efficiency metric for the column's system type.
+ *  HPWH systems report seasonal COP; everything else delegates to the
+ *  shared `resolveReportingEfficiency` helper so atmospheric vs condensing
+ *  gas tanks, tankless, central indirect, etc. all use the right metric
+ *  here AND in the exported reports (single source of truth). */
 function bestEfficiency(c: ColumnData): number | null {
   const sys = SYSTEM_TYPES[c.inputs.systemType];
   if (sys?.tech === "hpwh") {
     const cop = c.results.annualCOP || c.results.combi?.seasonalCOP_dhw;
     return Number.isFinite(cop) && cop > 0 ? cop : null;
   }
-  if (sys?.tech === "gas") {
-    const uef = c.results.inUnitGas?.gasTankUEF;
-    if (Number.isFinite(uef) && uef > 0) return uef;
-    if (Number.isFinite(c.inputs.gasEfficiency) && c.inputs.gasEfficiency > 0) {
-      return c.inputs.gasEfficiency;
-    }
-  }
-  if (sys?.tech === "resistance") return 1.0;
-  return null;
+  const eff = resolveReportingEfficiency(c.inputs, c.results);
+  return eff ? eff.value : null;
 }
 
 function numericOrNull(v: unknown): number | null {

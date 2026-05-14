@@ -9,6 +9,7 @@
  */
 import type { DhwInputs } from "@/lib/calc/inputs";
 import type { CalcResult } from "@/lib/calc/types";
+import { resolveReportingEfficiency } from "@/lib/calc/derived";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import { ENGINE_VERSION } from "@/lib/version";
 
@@ -136,7 +137,6 @@ function equipmentSection(inputs: DhwInputs, r: CalcResult): Row[] {
     case "central_gas":
     case "central_resistance":
       rows.push(
-        ["Gas efficiency", `${(inputs.gasEfficiency * 100).toFixed(0)}%`],
         ["Storage setpoint (F)", inputs.storageSetpointF],
         ["Recirc loop length (ft)", inputs.recircLoopLengthFt],
         ["Pipe insulation R-value", inputs.pipeInsulationR],
@@ -156,7 +156,6 @@ function equipmentSection(inputs: DhwInputs, r: CalcResult): Row[] {
         ["Gas tank size", `${inputs.gasTankSize} gal`],
         ["Gas tank type", inputs.gasTankType],
         ["Gas tank setpoint (F)", inputs.gasTankSetpointF],
-        ["Gas tank UEF", round(r.inUnitGas.gasTankUEF, 3)],
       );
       break;
     case "inunit_gas_tankless":
@@ -186,7 +185,30 @@ function equipmentSection(inputs: DhwInputs, r: CalcResult): Row[] {
         ["Fan-coil supply (F)", inputs.fanCoilSupplyF],
       );
       break;
+    case "inunit_combi_gas_tankless":
+      rows.push(
+        ["Tankless combi input (kBTU/hr)", inputs.inunitGasTanklessCombiInput],
+        ["Buffer tank size (gal)", inputs.inunitGasCombiBufferTankSize],
+        ["Tankless design rise (F)", inputs.tanklessDesignRiseF],
+        ["Fan-coil supply (F)", inputs.fanCoilSupplyF],
+      );
+      break;
+    case "inunit_resistance":
+    case "inunit_combi_resistance":
+      rows.push(
+        ["Resistance tank size (gal)", inputs.inunitResistanceTankSize],
+        ["Storage setpoint (F)", inputs.storageSetpointF],
+      );
+      break;
   }
+  // Equipment efficiency row — single source of truth that picks the right
+  // metric for the system (UEF for in-unit gas, thermal η for central,
+  // 100% for resistance). Replaces the per-case ad-hoc rows that were
+  // missing for several system types and silently showed gasEfficiency
+  // (~95%) for in-unit gas tank when the actual UEF is 0.64 atmospheric
+  // or 0.80–0.90 condensing.
+  const eff = resolveReportingEfficiency(inputs, r);
+  if (eff) rows.push([eff.label, eff.display]);
   return rows;
 }
 

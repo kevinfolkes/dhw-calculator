@@ -6,6 +6,7 @@
  */
 import type { DhwInputs } from "@/lib/calc/inputs";
 import type { CalcResult, ComplianceFlag } from "@/lib/calc/types";
+import { resolveReportingEfficiency } from "@/lib/calc/derived";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import { ENGINE_VERSION } from "@/lib/version";
 
@@ -30,7 +31,7 @@ export async function exportPDF(inputs: DhwInputs, result: CalcResult): Promise<
   doc.text(`Engine v${ENGINE_VERSION}`, 40, 84);
   doc.text(`Generated: ${new Date().toLocaleString("en-US")}`, 40, 98);
 
-  const inputRows = buildInputRows(inputs);
+  const inputRows = buildInputRows(inputs, result);
   autoTable(doc, {
     startY: 114,
     head: [["Input", "Value"]],
@@ -87,7 +88,7 @@ export async function exportDOCX(inputs: DhwInputs, result: CalcResult): Promise
       ],
     });
 
-  const inputRows = buildInputRows(inputs).map((r) => [r.label, r.value]);
+  const inputRows = buildInputRows(inputs, result).map((r) => [r.label, r.value]);
   const sizingRows = buildSizingRows(result).map((r) => [r.label, r.value]);
   const flagRows = buildFlagRows(result.flags);
 
@@ -121,8 +122,14 @@ function submittalFilename(ext: string): string {
   return `dhw-submittal-${stamp}.${ext}`;
 }
 
-function buildInputRows(i: DhwInputs): Row[] {
+function buildInputRows(i: DhwInputs, r: CalcResult): Row[] {
   const sys = SYSTEM_TYPES[i.systemType];
+  // Equipment efficiency varies by system type: central plants report a
+  // boiler thermal η; in-unit gas tank reports a UEF that differs sharply
+  // between atmospheric (0.64) and condensing (0.80–0.90); HPWH systems
+  // skip the row entirely (COP belongs on the sizing rollup). Resolved
+  // centrally in `derived.ts` so this row is correct for every system.
+  const eff = resolveReportingEfficiency(i, r);
   return [
     { label: "System type", value: sys.label },
     {
@@ -141,7 +148,7 @@ function buildInputRows(i: DhwInputs): Row[] {
           { label: "Return / ambient", value: `${i.recircReturnTempF}°F / ${i.ambientPipeF}°F` },
         ]
       : []),
-    { label: "Gas efficiency", value: `${(i.gasEfficiency * 100).toFixed(0)}%` },
+    ...(eff ? [{ label: eff.label, value: eff.display }] : []),
     { label: "HPWH refrigerant", value: i.hpwhRefrigerant },
     { label: "Electric rate", value: `$${i.elecRate}/kWh` },
     { label: "Gas rate", value: `$${i.gasRate}/therm` },

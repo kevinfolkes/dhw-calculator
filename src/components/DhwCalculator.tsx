@@ -25,6 +25,8 @@ import { ReportsTab } from "@/components/tabs/ReportsTab";
 import { CompareTab } from "@/components/tabs/CompareTab";
 import { exportDOCX, exportPDF } from "@/lib/export/submittal";
 import { SideTabNav, type SideTab, type SideTabGroup } from "@/components/SideTabNav";
+import type { SizingRec } from "@/lib/calc/types";
+import type { GasTankSize, GasTankType, GasTanklessInput, HPWHTankSize } from "@/lib/engineering/constants";
 import { fmt } from "@/lib/utils";
 
 type TabId =
@@ -42,6 +44,35 @@ type TabId =
   | "compliance"
   | "reports"
   | "compare";
+
+// ─── Type guards for SizingRec → DhwInputs narrowing ───────────────────────
+// SizingRec uses an open `[k: string]: unknown` index signature so it can
+// carry per-system-type fields (tankGal, subtype, inputMBH, kW, cap, …)
+// without forcing every consumer to handle every field. These guards
+// validate runtime values against the specific union members DhwInputs
+// expects, replacing what used to be `as` type assertions in the auto-size
+// apply handlers. If the engine ever emits a value outside the allowed
+// set the guard returns false and the field is left untouched.
+
+const GAS_TANK_SIZES: readonly GasTankSize[] = [40, 50, 75, 100];
+const HPWH_TANK_SIZES: readonly HPWHTankSize[] = [50, 66, 80, 120];
+const GAS_TANKLESS_INPUTS: readonly GasTanklessInput[] = [150, 180, 199];
+
+function isGasTankSize(v: unknown): v is GasTankSize {
+  return typeof v === "number" && (GAS_TANK_SIZES as readonly number[]).includes(v);
+}
+
+function isHPWHTankSize(v: unknown): v is HPWHTankSize {
+  return typeof v === "number" && (HPWH_TANK_SIZES as readonly number[]).includes(v);
+}
+
+function isGasTanklessInput(v: unknown): v is GasTanklessInput {
+  return typeof v === "number" && (GAS_TANKLESS_INPUTS as readonly number[]).includes(v);
+}
+
+function isGasTankType(v: unknown): v is GasTankType {
+  return v === "atmospheric" || v === "condensing";
+}
 
 export default function DhwCalculator() {
   const { inputs, setInputs, update, shareURL } = useDhwInputs();
@@ -123,49 +154,45 @@ export default function DhwCalculator() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Auto-size apply handlers
+  // Auto-size apply handlers — both variants funnel through the same
+  // `applySizingRec` so the type-narrowing logic lives in one place. The
+  // type guards convert SizingRec's loose `[k: string]: unknown` fields
+  // into the specific union members the DhwInputs schema expects,
+  // replacing the previous `as` casts that bypassed the type system.
   const applyRecommended = () => {
     const rec = result.autoSize?.recommended;
     if (!rec) return;
-    const next: DhwInputs = { ...inputs };
-    const tankGal = rec.tankGal as DhwInputs["combiTankSize"] | DhwInputs["gasTankSize"] | undefined;
-    if (tankGal != null) {
-      if (inputs.systemType === "inunit_gas_tank" || inputs.systemType === "inunit_combi_gas") {
-        next.gasTankSize = tankGal as DhwInputs["gasTankSize"];
-      } else if (inputs.systemType === "inunit_hpwh" || inputs.systemType === "inunit_combi") {
-        next.combiTankSize = tankGal as DhwInputs["combiTankSize"];
-      }
-    }
-    if (rec.inputMBH != null && inputs.systemType === "inunit_gas_tankless") {
-      next.gasTanklessInput = rec.inputMBH as DhwInputs["gasTanklessInput"];
-    }
-    if (rec.subtype != null && (inputs.systemType === "inunit_gas_tank" || inputs.systemType === "inunit_combi_gas")) {
-      next.gasTankType = rec.subtype as DhwInputs["gasTankType"];
-    }
-    setInputs(next);
-    setToast(`Applied recommended sizing: ${Object.entries(rec).filter(([k]) => !["capCost", "annCost", "total15"].includes(k)).map(([k, v]) => `${k}=${String(v)}`).join(", ")}`);
+    applySizingRec(rec);
+    setToast(
+      `Applied recommended sizing: ${Object.entries(rec)
+        .filter(([k]) => !["capCost", "annCost", "total15"].includes(k))
+        .map(([k, v]) => `${k}=${String(v)}`)
+        .join(", ")}`,
+    );
   };
 
   const applyLifecycle = () => {
     const rec = result.autoSize?.lifecycle;
     if (!rec) return;
-    const next: DhwInputs = { ...inputs };
-    const tankGal = rec.tankGal as DhwInputs["combiTankSize"] | DhwInputs["gasTankSize"] | undefined;
-    if (tankGal != null) {
-      if (inputs.systemType === "inunit_gas_tank" || inputs.systemType === "inunit_combi_gas") {
-        next.gasTankSize = tankGal as DhwInputs["gasTankSize"];
-      } else if (inputs.systemType === "inunit_hpwh" || inputs.systemType === "inunit_combi") {
-        next.combiTankSize = tankGal as DhwInputs["combiTankSize"];
-      }
-    }
-    if (rec.inputMBH != null && inputs.systemType === "inunit_gas_tankless") {
-      next.gasTanklessInput = rec.inputMBH as DhwInputs["gasTanklessInput"];
-    }
-    if (rec.subtype != null && (inputs.systemType === "inunit_gas_tank" || inputs.systemType === "inunit_combi_gas")) {
-      next.gasTankType = rec.subtype as DhwInputs["gasTankType"];
-    }
-    setInputs(next);
+    applySizingRec(rec);
     setToast("Applied lifecycle-optimal sizing");
+  };
+
+  const applySizingRec = (rec: SizingRec) => {
+    const next: DhwInputs = { ...inputs };
+
+    if (inputs.systemType === "inunit_gas_tank" || inputs.systemType === "inunit_combi_gas") {
+      if (isGasTankSize(rec.tankGal)) next.gasTankSize = rec.tankGal;
+      if (isGasTankType(rec.subtype)) next.gasTankType = rec.subtype;
+    } else if (inputs.systemType === "inunit_hpwh" || inputs.systemType === "inunit_combi") {
+      if (isHPWHTankSize(rec.tankGal)) next.combiTankSize = rec.tankGal;
+    }
+
+    if (inputs.systemType === "inunit_gas_tankless" && isGasTanklessInput(rec.inputMBH)) {
+      next.gasTanklessInput = rec.inputMBH;
+    }
+
+    setInputs(next);
   };
 
   const handleCopyLink = async () => {

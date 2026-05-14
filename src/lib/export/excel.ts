@@ -8,6 +8,7 @@
  */
 import type { DhwInputs } from "@/lib/calc/inputs";
 import type { CalcResult, MonthlyRow } from "@/lib/calc/types";
+import { resolveReportingEfficiency } from "@/lib/calc/derived";
 import { SYSTEM_TYPES } from "@/lib/engineering/system-types";
 import { ENGINE_VERSION } from "@/lib/version";
 
@@ -58,7 +59,7 @@ export async function exportXLSX(
   const wb = new ExcelJS.Workbook();
 
   buildSummarySheet(wb, inputs, result);
-  buildInputsSheet(wb, inputs);
+  buildInputsSheet(wb, inputs, result);
   buildSizingSheet(wb, result);
   buildMonthlyEnergySheet(wb, result);
   buildAutoSizeSheet(wb, inputs, result);
@@ -112,7 +113,7 @@ function buildSummarySheet(wb: ExcelWorkbook, inputs: DhwInputs, r: CalcResult):
   boldHeader(ws);
 }
 
-function buildInputsSheet(wb: ExcelWorkbook, inputs: DhwInputs): void {
+function buildInputsSheet(wb: ExcelWorkbook, inputs: DhwInputs, result: CalcResult): void {
   const ws = wb.addWorksheet("Inputs");
   ws.columns = [
     { header: "Label", key: "label", width: 42 },
@@ -158,6 +159,15 @@ function buildInputsSheet(wb: ExcelWorkbook, inputs: DhwInputs): void {
     ["Gas tank size (gal)", inputs.gasTankSize],
     ["Gas tank type", inputs.gasTankType],
     ["Gas tank setpoint (F)", inputs.gasTankSetpointF],
+    // Equipment efficiency — computed row that picks the right metric for
+    // the system (UEF for in-unit gas; thermal η for central; 100% for
+    // resistance). The raw `Gas efficiency (fraction)` row above is the
+    // user-entered boiler value, which is accurate for central but
+    // wouldn't reflect the atmospheric/condensing UEF for in-unit gas.
+    ...(() => {
+      const eff = resolveReportingEfficiency(inputs, result);
+      return eff ? ([["Equipment efficiency (effective)", eff.display]] as [string, unknown][]) : [];
+    })(),
     ["Gas tankless input (kBTU/hr)", inputs.gasTanklessInput],
     ["Tankless design rise (F)", inputs.tanklessDesignRiseF],
     ["Tankless simultaneous fixtures (count)", inputs.tanklessSimultaneousFixtures],

@@ -76,7 +76,13 @@ export function RetrofitComparison<I, R>({
   );
 
   const handleSave = () => {
-    const trimmed = name.trim() || "Retrofit comparison";
+    const trimmed = name.trim();
+    // Button is disabled when name is empty (see the save button below) —
+    // this guard is a defensive no-op so a non-button code path can't
+    // accidentally save an unnamed retrofit (silently using "Retrofit
+    // comparison" as the title made these reports invisible in the
+    // library, which is why we now require an explicit name).
+    if (trimmed.length === 0) return;
     onSave(trimmed, [
       { label: "current", inputs: currentInputs, results: currentResult },
       { label: "proposed", inputs: proposedInputs, results: proposedResult },
@@ -91,12 +97,77 @@ export function RetrofitComparison<I, R>({
       {/* Intro */}
       <Card accent="var(--accent-emerald)">
         <p style={{ fontSize: 13, lineHeight: 1.7, margin: 0, color: "var(--text-primary)" }}>
-          <strong>Retrofit comparison.</strong> Configure the current equipment
-          on the left, the proposed (post-retrofit) equipment on the right.
-          Annual energy, cost, and carbon savings recompute live below as you
-          change either side. Save the comparison as a single named report
-          for later reference or for comparing against other retrofits.
+          <strong>Retrofit comparison.</strong> Name the comparison first
+          (top of this tab), then configure current equipment on the left
+          and proposed (post-retrofit) equipment on the right. Annual energy,
+          cost, and carbon savings recompute live below as you change either
+          side. Saved retrofits live in the Reports library as a single
+          named record holding both scenarios.
         </p>
+      </Card>
+
+      {/* Name + Save action — moved to the top so users see the name
+          requirement before configuring the comparison. Save button is
+          duplicated below the savings strip for users who scroll the long
+          way; both buttons hit the same handler. */}
+      <Card>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <label
+            htmlFor="retrofit-name"
+            style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}
+          >
+            Retrofit name
+          </label>
+          <input
+            id="retrofit-name"
+            type="text"
+            className="ve-input"
+            placeholder="e.g., Corridor LED retrofit + occupancy sensors"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            style={{ flex: 1, minWidth: 240, fontFamily: "var(--font-sans)" }}
+          />
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={name.trim().length === 0}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 14px",
+              borderRadius: 6,
+              border: "none",
+              background: "var(--accent-emerald)",
+              color: "#fff",
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: name.trim().length === 0 ? "not-allowed" : "pointer",
+              opacity: name.trim().length === 0 ? 0.5 : 1,
+            }}
+          >
+            <Save size={13} />
+            Save retrofit
+          </button>
+          {savedFlash && (
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--accent-emerald)",
+                fontWeight: 600,
+              }}
+            >
+              {savedFlash}
+            </span>
+          )}
+        </div>
       </Card>
 
       {/* Two-column input region */}
@@ -161,67 +232,11 @@ export function RetrofitComparison<I, R>({
         </Card>
       </div>
 
-      {/* Savings strip */}
+      {/* Savings strip — final visual after the user has configured both
+          sides. The save action used to live below this; it now lives at
+          the top of the tab so users see the name requirement before
+          configuring, not after scrolling past the savings strip. */}
       <SavingsStrip current={currentMetrics} proposed={proposedMetrics} />
-
-      {/* Save retrofit row */}
-      <Card>
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <label
-            htmlFor="retrofit-name"
-            style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}
-          >
-            Name this retrofit:
-          </label>
-          <input
-            id="retrofit-name"
-            type="text"
-            className="ve-input"
-            placeholder="e.g., Corridor LED retrofit + occupancy sensors"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ flex: 1, minWidth: 240, fontFamily: "var(--font-sans)" }}
-          />
-          <button
-            type="button"
-            onClick={handleSave}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 14px",
-              borderRadius: 6,
-              border: "none",
-              background: "var(--accent-emerald)",
-              color: "#fff",
-              fontSize: 12.5,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            <Save size={13} />
-            Save retrofit
-          </button>
-          {savedFlash && (
-            <span
-              style={{
-                fontSize: 12,
-                color: "var(--accent-emerald)",
-                fontWeight: 600,
-              }}
-            >
-              {savedFlash}
-            </span>
-          )}
-        </div>
-      </Card>
     </div>
   );
 }
