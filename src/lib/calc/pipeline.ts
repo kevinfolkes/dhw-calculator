@@ -59,7 +59,7 @@ export function runCalc(input: DhwInputs): CalcResult {
     elecRate, gasRate, gridSubregion, customEF,
     avgUnitSqft, envelopePreset, indoorDesignF, combiTankSize,
     fanCoilSupplyF, combiDHWSetpointF, hpwhOpLimitF, ventilationLoadPerUnit,
-    systemType, gasTankSize, gasTankType, gasTankSetpointF,
+    systemType, gasTankSize, gasTankType, gasTankSetpointF, gasTankUEFOverride,
     gasTanklessInput, tanklessDesignRiseF, tanklessSimultaneousFixtures, gasTanklessSetpointF,
     centralGasTanklessInput, indirectHXEffectiveness,
     hybridSplitRatio, steamSourceEfficiency, steamHXEffectiveness, steamSupplyPressurePSIG,
@@ -616,7 +616,16 @@ export function runCalc(input: DhwInputs): CalcResult {
 
   // ---- IN-UNIT GAS (tank + tankless) ------------------------------------
   const gasTankSpec = GAS_TANK_WH[gasTankSize];
-  const gasTankUEF = gasTankType === "condensing" ? gasTankSpec.uef_cond : gasTankSpec.uef_atmos;
+  // UEF override takes precedence when non-zero (lets users model a specific
+  // product's nameplate UEF that differs from the size + atmospheric/
+  // condensing lookup table). Clamped to (0, 1] so a typo can't produce a
+  // perpetual-motion machine; values >1 collapse to the lookup default.
+  const gasTankUEFFromLookup =
+    gasTankType === "condensing" ? gasTankSpec.uef_cond : gasTankSpec.uef_atmos;
+  const gasTankUEF =
+    gasTankUEFOverride > 0 && gasTankUEFOverride <= 1
+      ? gasTankUEFOverride
+      : gasTankUEFFromLookup;
   const gasTankFHR = gasTankType === "condensing" ? gasTankSpec.fhr_condensing : gasTankSpec.fhr_atmospheric;
 
   const perUnitPeakGPH = ashraeProfile.mh;

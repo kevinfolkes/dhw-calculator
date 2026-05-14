@@ -800,8 +800,11 @@ export function CalculationsTab({ inputs, result }: Props) {
               </Result>
             </Formula>
             <Formula>
-              UEF = {result.inUnitGas.gasTankUEF.toFixed(2)} · input_MBH ={" "}
-              {result.inUnitGas.gasTankInputMBH} · output_MBH ={" "}
+              UEF = {result.inUnitGas.gasTankUEF.toFixed(2)}{" "}
+              {inputs.gasTankUEFOverride > 0 && inputs.gasTankUEFOverride <= 1
+                ? "(user override)"
+                : `(lookup default for ${inputs.gasTankSize}-gal ${inputs.gasTankType})`}{" "}
+              · input_MBH = {result.inUnitGas.gasTankInputMBH} · output_MBH ={" "}
               {result.inUnitGas.gasTankOutputMBH.toFixed(1)}
             </Formula>
             <Formula>

@@ -55,7 +55,15 @@ export function useDhwInputs(): {
     }
   }, [inputs]);
 
-  const setInputs = useCallback((next: DhwInputs) => setInputsState(next), []);
+  // Merge with DEFAULT_INPUTS on every setInputs call so older saved
+  // reports lacking newly-added fields (e.g. `gasTankUEFOverride` from
+  // dhw v0.5.1) hydrate the missing fields with sensible defaults instead
+  // of `undefined`. Caller-supplied values still win because `...next`
+  // comes after the spread.
+  const setInputs = useCallback(
+    (next: DhwInputs) => setInputsState({ ...DEFAULT_INPUTS, ...next }),
+    [],
+  );
 
   const update = useCallback(
     <K extends keyof DhwInputs>(key: K, value: DhwInputs[K]) => {

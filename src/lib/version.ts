@@ -13,7 +13,7 @@
  * "1.0.0" — that's the only place version state lives.
  */
 export const ENGINE_VERSIONS = {
-  dhw: "0.5.0",
+  dhw: "0.5.1",
   lighting: "1.0.0",
   inunit_hvac: "1.1.0",
   rtus: "1.0.0",

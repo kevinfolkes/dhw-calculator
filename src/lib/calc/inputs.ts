@@ -153,6 +153,14 @@ export interface DhwInputs {
   gasTankSize: GasTankSize;
   gasTankType: GasTankType;
   gasTankSetpointF: number;
+  /** Optional override for the gas tank's UEF efficiency. 0 (default) means
+   *  use the rating-table value derived from `gasTankSize` + `gasTankType`
+   *  (atmospheric ≈ 0.64; condensing 0.80–0.90 by size). A non-zero value
+   *  in (0, 1] overrides the lookup — useful for modeling a specific
+   *  manufacturer's product against its nameplate UEF, or for what-if
+   *  scenarios with non-standard equipment. Stored as a fraction, surfaced
+   *  in the UI as a percent. */
+  gasTankUEFOverride: number;
 
   // In-unit gas tankless
   gasTanklessInput: GasTanklessInput;
@@ -370,6 +378,7 @@ export const DEFAULT_INPUTS: DhwInputs = {
   gasTankSize: 50,
   gasTankType: "condensing",
   gasTankSetpointF: 125,
+  gasTankUEFOverride: 0,
   gasTanklessInput: 199,
   tanklessDesignRiseF: 70,
   tanklessSimultaneousFixtures: 2,

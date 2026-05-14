@@ -48,7 +48,7 @@ export function CombiTab({ inputs, update, result }: Props) {
             <CardHeader>
               <CardTitle>{isGasCombi ? "Gas Combi Tank — Per Unit" : "Gas Tank — Per Unit"}</CardTitle>
             </CardHeader>
-            <Grid cols={3}>
+            <Grid cols={4}>
               <Field label="Tank size" suffix="gal">
                 <SelectInput<GasTankSize>
                   value={inputs.gasTankSize}
@@ -59,7 +59,7 @@ export function CombiTab({ inputs, update, result }: Props) {
                   }))}
                 />
               </Field>
-              <Field label="Efficiency">
+              <Field label="Efficiency tier">
                 <SelectInput
                   value={inputs.gasTankType}
                   onChange={(v) => update("gasTankType", v)}
@@ -67,6 +67,27 @@ export function CombiTab({ inputs, update, result }: Props) {
                     { value: "condensing", label: "Condensing" },
                     { value: "atmospheric", label: "Non-condensing" },
                   ]}
+                />
+              </Field>
+              <Field
+                label="UEF override"
+                suffix="%"
+                hint={(() => {
+                  const lookup =
+                    inputs.gasTankType === "condensing"
+                      ? GAS_TANK_WH[inputs.gasTankSize].uef_cond
+                      : GAS_TANK_WH[inputs.gasTankSize].uef_atmos;
+                  return inputs.gasTankUEFOverride > 0
+                    ? `Override active: using ${Math.round(inputs.gasTankUEFOverride * 100)}% UEF instead of the ${Math.round(lookup * 100)}% lookup default for this size + tier. Set to 0 to revert.`
+                    : `0 (default) uses the lookup table value of ${Math.round(lookup * 100)}% UEF for this ${inputs.gasTankSize}-gal ${inputs.gasTankType} tank. Enter a specific UEF % to override (e.g. 84 for a high-efficiency condensing model that exceeds the default).`;
+                })()}
+              >
+                <NumberInput
+                  value={Math.round(inputs.gasTankUEFOverride * 100)}
+                  onChange={(n) => update("gasTankUEFOverride", Math.max(0, Math.min(99, n)) / 100)}
+                  min={0}
+                  max={99}
+                  step={1}
                 />
               </Field>
               <Field label="Setpoint" suffix="°F">

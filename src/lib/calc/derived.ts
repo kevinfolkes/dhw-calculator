@@ -55,14 +55,20 @@ export function resolveReportingEfficiency(
   const uef = (n: number) => n.toFixed(2);
 
   switch (inputs.systemType) {
-    // ── In-unit gas tank (atmospheric OR condensing) ─────────────────────
+    // ── In-unit gas tank (atmospheric OR condensing, with optional
+    //    user override that takes precedence over the lookup). ────────────
     case "inunit_gas_tank":
     case "inunit_combi_gas": {
       const u = result.inUnitGas.gasTankUEF;
+      const overrideActive =
+        inputs.gasTankUEFOverride > 0 && inputs.gasTankUEFOverride <= 1;
+      const qualifier = overrideActive
+        ? `user override · ${inputs.gasTankType}, ${inputs.gasTankSize}-gal nominal`
+        : `${inputs.gasTankType}, ${inputs.gasTankSize}-gal`;
       return {
-        label: `UEF (${inputs.gasTankType})`,
+        label: overrideActive ? "UEF (user-entered)" : `UEF (${inputs.gasTankType})`,
         value: u,
-        display: `${uef(u)} UEF (${inputs.gasTankType}, ${inputs.gasTankSize}-gal)`,
+        display: `${uef(u)} UEF (${qualifier})`,
         metric: "UEF",
       };
     }

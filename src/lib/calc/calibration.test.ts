@@ -428,6 +428,92 @@ describe("ENERGY STAR MFNC v1.2 — In-unit baselines", () => {
   });
 
   /**
+   * Gas tank UEF override takes precedence over the size + atmospheric/
+   * condensing lookup. Lets users model a specific manufacturer's product
+   * by entering its nameplate UEF directly — useful when the actual
+   * product's efficiency falls outside the default lookup band (high-eff
+   * condensing models can hit 0.94+; older atmospheric units may be as
+   * low as 0.58).
+   * Source: AHRI Directory of Certified Products — Residential Storage
+   * Water Heaters; ENERGY STAR Water Heater Specification v3.0 §3.
+   */
+  it("Gas tank UEF override (non-zero) replaces the lookup default", () => {
+    // Override 0.90 should beat the atmospheric lookup of 0.64 for a
+    // 50-gal tank — annual therms should drop proportionally to the
+    // efficiency ratio.
+    const lookup = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_gas_tank",
+      gasTankSize: 50,
+      gasTankType: "atmospheric",
+      gasTankUEFOverride: 0,
+    });
+    const override = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_gas_tank",
+      gasTankSize: 50,
+      gasTankType: "atmospheric",
+      gasTankUEFOverride: 0.90,
+    });
+    // Lookup uses 0.64 UEF; override uses 0.90. Annual therms ratio
+    // should match the inverse efficiency ratio (0.64/0.90 ≈ 0.711).
+    expect(lookup.inUnitGas.gasTankUEF).toBeCloseTo(0.64, 2);
+    expect(override.inUnitGas.gasTankUEF).toBeCloseTo(0.90, 2);
+    const ratio =
+      override.inUnitGas.gasTankAnnualTherms_perUnit /
+      lookup.inUnitGas.gasTankAnnualTherms_perUnit;
+    expect(ratio).toBeCloseTo(0.64 / 0.90, 2);
+  });
+
+  it("Gas tank UEF override = 0 (default) falls back to the lookup table", () => {
+    const r = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_gas_tank",
+      gasTankSize: 50,
+      gasTankType: "condensing",
+      gasTankUEFOverride: 0,
+    });
+    // 50-gal condensing lookup = 0.82.
+    expect(r.inUnitGas.gasTankUEF).toBeCloseTo(0.82, 2);
+  });
+
+  it("Gas tank UEF override out of range (>1) falls back to lookup", () => {
+    // Typos like 0.90 → 90 should be treated as nonsense and fall back to
+    // the lookup default rather than producing a perpetual-motion machine.
+    const r = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_gas_tank",
+      gasTankSize: 50,
+      gasTankType: "atmospheric",
+      gasTankUEFOverride: 90, // user typed 90 instead of 0.90
+    });
+    expect(r.inUnitGas.gasTankUEF).toBeCloseTo(0.64, 2);
+  });
+
+  it("Gas tank UEF override flows through to combi gas systems", () => {
+    // inunit_combi_gas shares the same gasTankUEF derivation. Override
+    // should apply equally there so combi gas users can also model a
+    // specific product's UEF without juggling atmospheric/condensing.
+    const lookup = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_combi_gas",
+      gasTankSize: 75,
+      gasTankType: "condensing",
+      gasTankUEFOverride: 0,
+    });
+    const override = runCalc({
+      ...DEFAULT_INPUTS,
+      systemType: "inunit_combi_gas",
+      gasTankSize: 75,
+      gasTankType: "condensing",
+      gasTankUEFOverride: 0.93,
+    });
+    // 75-gal condensing lookup = 0.88; override = 0.93.
+    expect(lookup.inUnitGas.gasTankUEF).toBeCloseTo(0.88, 2);
+    expect(override.inUnitGas.gasTankUEF).toBeCloseTo(0.93, 2);
+  });
+
+  /**
    * Per-bedroom-count differentiation (combi only): when method=occupancy,
    * per-bedroom DHW scales with the bedroom-typical occupant count. A 3BR
    * (3.5 occupants default) should consume ~3.5× the DHW of a studio
