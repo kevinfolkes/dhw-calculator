@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * In-unit HVAC Energy & cost tab — annual rollup cards + monthly stacked
- * chart (cooling vs heating split by climate-zone CDD/HDD shares) + per-
- * end-use breakdown table + advisory flags. Split out of
- * `InUnitHvacCalculator.tsx` so the shell stays focused on routing.
+ * Lighting Energy & cost tab — annual rollup cards + monthly stacked chart
+ * (kWh per category, day-count-weighted across months) + per-category
+ * breakdown table + advisory flags. Extracted from `LightingCalculator.tsx`
+ * to match the in-unit HVAC tab extraction pattern. Wrapped in React.memo
+ * so unrelated parent re-renders don't trigger a recharts re-render.
  */
 import { memo, useMemo } from "react";
 import {
@@ -19,32 +20,41 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { fmt, fmtUSD } from "@/lib/utils";
+import { MONTH_DAYS, MONTHS } from "@/lib/engineering/constants";
+import {
+  LIGHTING_CATEGORY_LABELS,
+  type LightingCategory,
+} from "@/lib/lighting/inputs";
 import {
   CHART_AXIS,
   CHART_GRID,
-  INUNIT_HVAC_ENDUSE_COLORS as ENDUSE_COLORS,
+  LIGHTING_CATEGORY_COLORS as CATEGORY_COLORS,
 } from "@/lib/chart-palette";
-import type { InUnitHvacInputs } from "@/lib/inunit-hvac/inputs";
-import type { InUnitHvacResult } from "@/lib/inunit-hvac/types";
+import type { LightingResult } from "@/lib/lighting/types";
 
 interface Props {
-  inputs: InUnitHvacInputs;
-  result: InUnitHvacResult;
+  result: LightingResult;
 }
 
-/** Build the per-end-use monthly data the recharts BarChart expects.
- *  Each row is `{ month, cooling: kWh, heating: kWh }`. */
-function buildMonthlyEnduseData(result: InUnitHvacResult) {
-  return result.monthly.monthly.map((m) => ({
-    month: m.month,
-    cooling: +m.coolingKWh.toFixed(0),
-    heating: +m.heatingKWh.toFixed(0),
-    _totalCost: +m.totalCost.toFixed(0),
-    _totalCarbon: +m.totalCarbon.toFixed(0),
-  }));
+/** Build the per-category monthly data the recharts BarChart expects. Each
+ *  row is `{ month, [categoryKey]: kWh, ... }`. Lighting load is uniform
+ *  across the year, so each month gets `daysInMonth / 365` of each
+ *  category's annual kWh — December (31 days) is the tallest bar by ~10%
+ *  vs February (28 days). */
+function buildMonthlyCategoryData(result: LightingResult) {
+  return MONTHS.map((monthName, m) => {
+    const dayShare = MONTH_DAYS[m] / 365;
+    const row: Record<string, string | number> = { month: monthName };
+    for (const cat of result.categories) {
+      row[cat.category] = +(cat.annualKWh * dayShare).toFixed(1);
+    }
+    row._totalCost = +(result.annualCost * dayShare).toFixed(0);
+    row._totalCarbon = +(result.annualCarbon * dayShare).toFixed(0);
+    return row;
+  });
 }
 
-/** Custom tooltip that shows per-end-use kWh + the month's total cost +
+/** Custom tooltip that shows per-category kWh + the month's total cost +
  *  carbon, since the stacked bars only encode kWh visually. */
 function MonthlyTooltip({
   active,
@@ -52,19 +62,11 @@ function MonthlyTooltip({
   label,
 }: {
   active?: boolean;
-  payload?: Array<{
-    name: string;
-    value: number;
-    color: string;
-    payload: Record<string, number | string>;
-  }>;
+  payload?: Array<{ name: string; value: number; color: string; payload: Record<string, number | string> }>;
   label?: string;
 }) {
   if (!active || !payload || payload.length === 0) return null;
-  const total = payload.reduce(
-    (s, p) => s + (typeof p.value === "number" ? p.value : 0),
-    0,
-  );
+  const total = payload.reduce((s, p) => s + (typeof p.value === "number" ? p.value : 0), 0);
   const costRaw = payload[0]?.payload?._totalCost;
   const carbonRaw = payload[0]?.payload?._totalCarbon;
   const monthCost = typeof costRaw === "number" ? costRaw : 0;
@@ -84,7 +86,7 @@ function MonthlyTooltip({
       <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
       {payload
         .slice()
-        .reverse()
+        .reverse() // top-to-bottom matches the stack
         .filter((p) => typeof p.value === "number" && p.value > 0)
         .map((p) => (
           <div
@@ -149,10 +151,15 @@ function MonthlyTooltip({
   );
 }
 
-function EnergyTabInner({ inputs, result }: Props) {
-  const monthlyData = useMemo(() => buildMonthlyEnduseData(result), [result]);
-  const showCooling = result.cooling.buildingKWh > 0;
-  const showHeating = result.heating.buildingKWh > 0;
+function EnergyTabInner({ result }: Props) {
+  // Build chart data once per render — recharts is stateless and the
+  // monthly values are derived from `result` directly.
+  const monthlyData = useMemo(() => buildMonthlyCategoryData(result), [result]);
+
+  // Categories present in the result with non-zero contribution — chart
+  // hides the others so the legend stays clean (e.g., garage/parking when
+  // count is 0).
+  const visibleCategories = result.categories.filter((c) => c.annualKWh > 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -160,45 +167,23 @@ function EnergyTabInner({ inputs, result }: Props) {
         Annual energy &amp; cost
       </h1>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: 12,
-        }}
-      >
-        <MetricBig
-          label="Annual electricity"
-          value={`${fmt(result.totalAnnualKWh, 0)} kWh`}
-        />
-        <MetricBig label="Annual cost" value={fmtUSD(result.totalAnnualCost, 0)} />
-        <MetricBig
-          label="Annual carbon"
-          value={`${fmt(result.totalAnnualCarbon, 0)} lb CO₂e`}
-        />
-        <MetricBig
-          label="Connected cooling"
-          value={`${result.totalConnectedTons.toFixed(1)} tons`}
-        />
-        <MetricBig label="Apartments" value={fmt(result.apartmentCount, 0)} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        <MetricBig label="Annual electricity" value={`${fmt(result.annualKWh, 0)} kWh`} />
+        <MetricBig label="Annual cost" value={fmtUSD(result.annualCost, 0)} />
+        <MetricBig label="Annual carbon" value={`${fmt(result.annualCarbon, 0)} lb CO₂e`} />
+        <MetricBig label="LPD (W/ft²)" value={result.lpdWattsPerSqft.toFixed(2)} />
+        <MetricBig label="Total connected W" value={fmt(result.totalConnectedWatts, 0)} />
       </div>
 
-      {/* Monthly stacked chart */}
+      {/* Monthly breakdown — stacked bar by category */}
       <Card>
         <CardHeader>
-          <CardTitle>Monthly energy by end-use (kWh)</CardTitle>
-          <p
-            style={{
-              fontSize: 12,
-              color: "var(--text-secondary)",
-              margin: "4px 0 0",
-              lineHeight: 1.5,
-            }}
-          >
-            Cooling kWh distributes across the year by climate-zone CDD share
-            (peaks Jul/Aug); heating kWh by HDD share (peaks Dec/Jan). The
-            shape changes dramatically by climate — try Miami vs Minneapolis
-            to see.
+          <CardTitle>Monthly energy by category (kWh)</CardTitle>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0", lineHeight: 1.5 }}>
+            Lighting load is climate-insensitive — each month&apos;s share is
+            its day-count fraction of the annual total ({"≈ daysInMonth / 365"}).
+            December (31 days) is ~10% taller than February (28 days). The
+            stack shows which category dominates the load.
           </p>
         </CardHeader>
         <div style={{ width: "100%", height: 280 }}>
@@ -218,63 +203,54 @@ function EnergyTabInner({ inputs, result }: Props) {
               />
               <Tooltip wrapperStyle={{ fontSize: 12 }} content={<MonthlyTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11 }} iconType="square" />
-              {showCooling && (
-                <Bar dataKey="cooling" name="Cooling" fill={ENDUSE_COLORS.cooling} stackId="e" />
-              )}
-              {showHeating && (
-                <Bar dataKey="heating" name="Heating" fill={ENDUSE_COLORS.heating} stackId="e" />
-              )}
+              {visibleCategories.map((cat) => (
+                <Bar
+                  key={cat.category}
+                  dataKey={cat.category}
+                  name={LIGHTING_CATEGORY_LABELS[cat.category as LightingCategory]}
+                  fill={CATEGORY_COLORS[cat.category as LightingCategory]}
+                  stackId="e"
+                />
+              ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
       </Card>
 
-      {/* Per-end-use breakdown table */}
       <Card>
         <CardHeader>
-          <CardTitle>By end-use</CardTitle>
+          <CardTitle>By category</CardTitle>
         </CardHeader>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: "var(--accent-blue-bg)", color: "var(--text-secondary)" }}>
-                <th style={th}>End-use</th>
-                <th style={thNum}>Capacity (BTU/h)</th>
-                <th style={thNum}>EFLH (hr/yr)</th>
-                <th style={thNum}>Eff (rated)</th>
-                <th style={thNum}>Eff COP</th>
-                <th style={thNum}>kWh/apt</th>
+                <th style={th}>Category</th>
+                <th style={thNum}>Connected W</th>
+                <th style={thNum}>Annual hr</th>
                 <th style={thNum}>kWh/yr</th>
                 <th style={thNum}>$/yr</th>
                 <th style={thNum}>lb CO₂/yr</th>
               </tr>
             </thead>
             <tbody>
-              <EndUseRow
-                label="Cooling"
-                metricLabel={inputs.coolingEfficiencyMetric}
-                row={result.cooling}
-              />
-              <EndUseRow
-                label="Heating"
-                metricLabel={inputs.heatingEfficiencyMetric}
-                row={result.heating}
-              />
+              {result.categories.map((c) => (
+                <tr key={c.category} style={{ borderBottom: "1px solid var(--border-light)" }}>
+                  <td style={td}>{LIGHTING_CATEGORY_LABELS[c.category as LightingCategory]}</td>
+                  <td style={tdNum}>{fmt(c.connectedWatts, 0)}</td>
+                  <td style={tdNum}>{fmt(c.annualHours, 0)}</td>
+                  <td style={tdNum}>{fmt(c.annualKWh, 0)}</td>
+                  <td style={tdNum}>{fmtUSD(c.annualCost, 0)}</td>
+                  <td style={tdNum}>{fmt(c.annualCarbon, 0)}</td>
+                </tr>
+              ))}
               <tr style={{ background: "var(--accent-blue-bg)", fontWeight: 700 }}>
                 <td style={td}>Total</td>
+                <td style={tdNum}>{fmt(result.totalConnectedWatts, 0)}</td>
                 <td style={tdNum}>—</td>
-                <td style={tdNum}>—</td>
-                <td style={tdNum}>—</td>
-                <td style={tdNum}>—</td>
-                <td style={tdNum}>
-                  {fmt(
-                    (result.cooling.perAptKWh ?? 0) + (result.heating.perAptKWh ?? 0),
-                    0,
-                  )}
-                </td>
-                <td style={tdNum}>{fmt(result.totalAnnualKWh, 0)}</td>
-                <td style={tdNum}>{fmtUSD(result.totalAnnualCost, 0)}</td>
-                <td style={tdNum}>{fmt(result.totalAnnualCarbon, 0)}</td>
+                <td style={tdNum}>{fmt(result.annualKWh, 0)}</td>
+                <td style={tdNum}>{fmtUSD(result.annualCost, 0)}</td>
+                <td style={tdNum}>{fmt(result.annualCarbon, 0)}</td>
               </tr>
             </tbody>
           </table>
@@ -327,32 +303,10 @@ function EnergyTabInner({ inputs, result }: Props) {
   );
 }
 
-function EndUseRow({
-  label,
-  metricLabel,
-  row,
-}: {
-  label: string;
-  metricLabel: string;
-  row: InUnitHvacResult["cooling"];
-}) {
-  return (
-    <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-      <td style={td}>{label}</td>
-      <td style={tdNum}>{fmt(row.capacityBtuh, 0)}</td>
-      <td style={tdNum}>{fmt(row.eflhHours, 0)}</td>
-      <td style={tdNum}>
-        {row.ratedEfficiency.toFixed(1)}{" "}
-        <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{metricLabel}</span>
-      </td>
-      <td style={tdNum}>{row.effectiveCOP.toFixed(2)}</td>
-      <td style={tdNum}>{fmt(row.perAptKWh, 0)}</td>
-      <td style={tdNum}>{fmt(row.buildingKWh, 0)}</td>
-      <td style={tdNum}>{fmtUSD(row.buildingCost, 0)}</td>
-      <td style={tdNum}>{fmt(row.buildingCarbon, 0)}</td>
-    </tr>
-  );
-}
+/** Memoized — only re-renders when `result` changes by reference, so
+ *  parent-shell re-renders from unrelated state updates skip this tab's
+ *  recharts re-paint entirely. */
+export const EnergyTab = memo(EnergyTabInner);
 
 function MetricBig({ label, value }: { label: string; value: string }) {
   return (
@@ -375,15 +329,7 @@ function MetricBig({ label, value }: { label: string; value: string }) {
       >
         {label}
       </div>
-      <div
-        style={{
-          fontSize: 22,
-          fontWeight: 800,
-          color: "var(--text-primary)",
-          marginTop: 4,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
+      <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
         {value}
       </div>
     </div>
@@ -401,12 +347,4 @@ const th: React.CSSProperties = {
 };
 const thNum: React.CSSProperties = { ...th, textAlign: "right" };
 const td: React.CSSProperties = { padding: "8px 10px", color: "var(--text-primary)" };
-const tdNum: React.CSSProperties = {
-  ...td,
-  textAlign: "right",
-  fontVariantNumeric: "tabular-nums",
-};
-
-/** Memoized — only re-renders when inputs / result change by reference,
- *  so unrelated parent state updates skip this tab's recharts re-paint. */
-export const EnergyTab = memo(EnergyTabInner);
+const tdNum: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };

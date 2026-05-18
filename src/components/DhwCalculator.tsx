@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Book, Building2, Calculator, ClipboardList, Droplets, FileText, GitCompare, Gauge, Home,
   LayoutGrid, Sigma, ThermometerSun,
@@ -17,14 +18,31 @@ import { AutoSizeTab } from "@/components/tabs/AutoSizeTab";
 import { SizingTab } from "@/components/tabs/SizingTab";
 import { EquipmentTab } from "@/components/tabs/EquipmentTab";
 import { CombiTab } from "@/components/tabs/CombiTab";
-import { EnergyTab } from "@/components/tabs/EnergyTab";
-import { CalculationsTab } from "@/components/tabs/CalculationsTab";
 import { ComplianceTab } from "@/components/tabs/ComplianceTab";
-import { MethodologyTab } from "@/components/tabs/MethodologyTab";
 import { ReportsTab } from "@/components/tabs/ReportsTab";
 import { CompareTab } from "@/components/tabs/CompareTab";
+import { TabSkeleton } from "@/components/ui/TabSkeleton";
 import { exportDOCX, exportPDF } from "@/lib/export/submittal";
 import { SideTabNav, type SideTab, type SideTabGroup } from "@/components/SideTabNav";
+
+// ─── Lazy-loaded heavy tabs ────────────────────────────────────────────────
+// EnergyTab pulls in recharts (~80–100KB gzipped); CalculationsTab is the
+// largest tab file in the repo (1500+ lines); MethodologyTab is ~900 lines
+// of long-form prose. Deferred so first-paint of the calculator shows
+// Overview/Building/Demand/etc immediately without paying the chunk cost.
+// `ssr: false` is fine — static export hydrates on the client anyway.
+const EnergyTab = dynamic(
+  () => import("@/components/tabs/EnergyTab").then((m) => ({ default: m.EnergyTab })),
+  { ssr: false, loading: () => <TabSkeleton label="Loading energy model" /> },
+);
+const CalculationsTab = dynamic(
+  () => import("@/components/tabs/CalculationsTab").then((m) => ({ default: m.CalculationsTab })),
+  { ssr: false, loading: () => <TabSkeleton label="Loading calculations" /> },
+);
+const MethodologyTab = dynamic(
+  () => import("@/components/tabs/MethodologyTab").then((m) => ({ default: m.MethodologyTab })),
+  { ssr: false, loading: () => <TabSkeleton label="Loading methodology" /> },
+);
 import type { SizingRec } from "@/lib/calc/types";
 import type { GasTankSize, GasTankType, GasTanklessInput, HPWHTankSize } from "@/lib/engineering/constants";
 import { fmt } from "@/lib/utils";

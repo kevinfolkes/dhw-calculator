@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Card } from "@/components/ui/Card";
 import {
   Callout,
@@ -44,8 +45,11 @@ interface FixtureMix {
  * the user's current inputs into every formula. Designed to let an engineer
  * read the calculator as a worked example — you should be able to verify
  * each line by hand against ASHRAE / Hunter / ASPE references.
+ *
+ * Memoized — large file with many derived constants; only re-renders when
+ * inputs or result change by reference.
  */
-export function CalculationsTab({ inputs, result }: Props) {
+function CalculationsTabInner({ inputs, result }: Props) {
   const sys = SYSTEM_TYPES[inputs.systemType];
   const isCentral = sys.topology === "central";
   const isCentralTankless = inputs.systemType === "central_gas_tankless";
@@ -1398,3 +1402,5 @@ function methodLabel(m: DhwInputs["demandMethod"]): string {
     ? "Hunter / ASPE Modified"
     : "Occupancy (gpcd)";
 }
+
+export const CalculationsTab = memo(CalculationsTabInner);

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Grid } from "@/components/ui/Grid";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -17,7 +18,10 @@ interface Props {
   result: CalcResult;
 }
 
-export function EnergyTab({ inputs, result }: Props) {
+/** Memoized — only re-renders when `inputs` or `result` change by
+ *  reference, so unrelated parent state updates skip this tab's recharts
+ *  + custom-tooltip re-paint entirely. */
+function EnergyTabInner({ inputs, result }: Props) {
   const unit = result.monthly.monthlyUnit || "kWh";
   const hasHeating = result.monthly.heatingFraction > 0.01;
   const monthly = result.monthly.monthly;
@@ -272,3 +276,5 @@ function TipRow({ color, label, value, indent }: { color: string; label: string;
     </div>
   );
 }
+
+export const EnergyTab = memo(EnergyTabInner);

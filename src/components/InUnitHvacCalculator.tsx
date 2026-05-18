@@ -16,6 +16,7 @@
  *   - MethodologyTab — long-form sources + EFLH math walkthrough
  */
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   AirVent,
   BarChart3,
@@ -32,10 +33,26 @@ import { fmt, fmtUSD } from "@/lib/utils";
 import { TopTabNav } from "@/components/TopTabNav";
 import { OverviewTab } from "@/components/tabs/inunit-hvac/OverviewTab";
 import { EquipmentTab } from "@/components/tabs/inunit-hvac/EquipmentTab";
-import { EnergyTab } from "@/components/tabs/inunit-hvac/EnergyTab";
 import { RetrofitTab } from "@/components/tabs/inunit-hvac/RetrofitTab";
-import { CalculationsTab } from "@/components/tabs/inunit-hvac/CalculationsTab";
-import { MethodologyTab } from "@/components/tabs/inunit-hvac/MethodologyTab";
+import { TabSkeleton } from "@/components/ui/TabSkeleton";
+
+// ─── Lazy-loaded heavy tabs ────────────────────────────────────────────────
+// EnergyTab pulls in recharts (~80–100KB gzipped); CalculationsTab is
+// substantial; MethodologyTab is ~900 lines of long-form prose. Deferred so
+// first-paint shows Overview/Equipment immediately without paying the chunk
+// cost. `ssr: false` is fine — static export hydrates on the client anyway.
+const EnergyTab = dynamic(
+  () => import("@/components/tabs/inunit-hvac/EnergyTab").then((m) => ({ default: m.EnergyTab })),
+  { ssr: false, loading: () => <TabSkeleton label="Loading energy model" /> },
+);
+const CalculationsTab = dynamic(
+  () => import("@/components/tabs/inunit-hvac/CalculationsTab").then((m) => ({ default: m.CalculationsTab })),
+  { ssr: false, loading: () => <TabSkeleton label="Loading calculations" /> },
+);
+const MethodologyTab = dynamic(
+  () => import("@/components/tabs/inunit-hvac/MethodologyTab").then((m) => ({ default: m.MethodologyTab })),
+  { ssr: false, loading: () => <TabSkeleton label="Loading methodology" /> },
+);
 
 type TabId =
   | "overview"

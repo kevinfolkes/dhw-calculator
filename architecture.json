@@ -1,0 +1,707 @@
+{
+  "$schema": "https://json.schemastore.org/architecture-snapshot.json",
+  "generatedAt": "2026-05-12",
+  "schemaVersion": 2,
+  "changeLog": [
+    {
+      "date": "2026-05-12",
+      "summary": "Issue remediation pass: lazy-loaded heavy tabs (EnergyTab/CalculationsTab/MethodologyTab) via next/dynamic in all 3 calculators; extracted LightingCalculator's inlined Equipment/Energy/Retrofit tabs to tabs/lighting/; wrapped Energy + Calculations tabs in React.memo; documented intentional deferral of DHW CalculationsTab split (lazy-loaded so not bundle-critical); added TabSkeleton shared loader; added doc-sync convention to CLAUDE.md."
+    },
+    {
+      "date": "2026-05-12",
+      "summary": "Initial architecture snapshot generated."
+    }
+  ],
+  "project": {
+    "name": "dhw-calculator",
+    "humanName": "Multifamily Building Energy Calculator",
+    "type": "static-spa",
+    "repository": "https://github.com/kevinfolkes/dhw-calculator",
+    "deployedAt": "https://kevinfolkes.github.io/dhw-calculator/",
+    "purpose": "Web-based engineering tool for sizing and retrofitting equipment in multifamily residential buildings. Multiple per-end-use calculators (DHW, lighting, in-unit HVAC; planned: RTUs, boilers/chillers, etc.) each producing annual kWh / $ / lb CO2 outputs, current-vs-proposed retrofit comparisons, and step-by-step worked-example math.",
+    "intendedUsers": ["energy managers at MF portfolio owners", "ESCOs", "utilities", "MEP design firms"]
+  },
+  "techStack": {
+    "framework": {
+      "name": "Next.js",
+      "version": "16.2.2",
+      "router": "App Router",
+      "renderingMode": "static export (output: 'export')",
+      "configFile": "next.config.ts",
+      "lazyLoading": "next/dynamic with ssr:false for heavy tabs (EnergyTab/CalculationsTab/MethodologyTab) — defers recharts + long prose off the first-paint critical path"
+    },
+    "ui": {
+      "react": "19.2.4",
+      "typescript": "^5",
+      "strictMode": true,
+      "stylingApproach": "inline styles + CSS variables in globals.css + Tailwind v4",
+      "icons": "lucide-react ^0.460.0",
+      "charts": "recharts ^3.8.1 (lazy-loaded — only paid when a chart-using tab is opened)"
+    },
+    "exports": {
+      "pdf": "jspdf ^2.5.2 + jspdf-autotable ^3.8.4",
+      "docx": "docx ^9.5.0",
+      "excel": "exceljs 4.4.0",
+      "csv": "hand-rolled",
+      "fileSaver": "file-saver ^2.0.5"
+    },
+    "tooling": {
+      "tests": "vitest ^2.1.9 (jsdom env)",
+      "linter": "eslint ^9 + eslint-config-next 16.2.2",
+      "packageManager": "npm",
+      "nodeVersion": "Node 20+ (Next 16 + React 19 requirement, not pinned in engines)"
+    },
+    "deployment": {
+      "target": "GitHub Pages",
+      "ciCd": "GitHub Actions (.github/workflows/deploy.yml)",
+      "basePath": "/dhw-calculator (production only)",
+      "trailingSlash": true,
+      "imageOptimizer": "disabled (static export incompatibility)"
+    }
+  },
+  "runtimeIntegrations": {
+    "apiEndpoints": "NONE - app is 100% client-side, no backend, no API routes, no fetch calls to external services",
+    "databases": "NONE - persistence is browser localStorage only (key: 'dhw-calc.reports.v1' for reports, 'dhw-calculator:inputs:v1' / 'lighting-calculator:inputs:v1' / 'inunit-hvac-calculator:inputs:v1' for live inputs per calculator)",
+    "externalServices": "NONE at runtime. Build-time only: npm registry, GitHub Pages, GitHub Actions.",
+    "authentication": "NONE",
+    "telemetry": "NONE"
+  },
+  "entryPoints": [
+    {
+      "route": "/",
+      "file": "src/app/page.tsx",
+      "component": "LandingPage",
+      "purpose": "Calculator picker - tile grid linking to each per-end-use calculator and the cross-domain reports/compare routes"
+    },
+    {
+      "route": "/dhw",
+      "file": "src/app/dhw/page.tsx",
+      "component": "DhwCalculator",
+      "purpose": "Domestic hot water calculator - 19 system types (central + in-unit), uses SideTabNav with 13 tabs across 4 workflow stages (Inputs / Evaluation / Documentation / Output)",
+      "engineVersion": "0.5.1",
+      "calibrationSource": "ASHRAE Apps Ch. 51, ASPE Vol. 2, AHRI 1300/1700, NEEA HPWH, ENERGY STAR MFNC, EPA eGRID 2022"
+    },
+    {
+      "route": "/lighting",
+      "file": "src/app/lighting/page.tsx",
+      "component": "LightingCalculator",
+      "purpose": "Lighting end-use calculator - 7 luminaire categories with occupancy/daylight controls, LPD compliance flag, retrofit comparison. Uses TopTabNav (4 tabs). All tabs extracted to tabs/lighting/.",
+      "engineVersion": "1.0.0",
+      "calibrationSource": "ASHRAE 90.1 sec 9, ENERGY STAR Lamps/Luminaires, DLC QPL, DOE BA, IES Lighting Handbook, NEEA MF Lighting Field Study"
+    },
+    {
+      "route": "/inunit-hvac",
+      "file": "src/app/inunit-hvac/page.tsx",
+      "component": "InUnitHvacCalculator",
+      "purpose": "Per-apartment cooling + heating calculator - 8 archetypes (PTAC/PTHP/mini-split/window AC/CCHP/ducted central). Uses TopTabNav (6 tabs).",
+      "engineVersion": "1.1.0",
+      "calibrationSource": "ASHRAE 90.1 sec 6.4, AHRI 210/240, AHRI 310/380, ENERGY STAR Central AC/HP v6.1, NEEP CCHP, MassSave + NYSERDA field studies"
+    },
+    {
+      "route": "/reports",
+      "file": "src/app/reports/page.tsx",
+      "component": "ReportsTab (centralized)",
+      "purpose": "Cross-domain saved reports library - lists scenarios from all domains in one view, allows load/delete/export"
+    },
+    {
+      "route": "/compare",
+      "file": "src/app/compare/page.tsx",
+      "component": "CompareTab (centralized)",
+      "purpose": "Cross-domain compare view - pick 2-4 saved scenarios for side-by-side diff with delta column"
+    },
+    {
+      "rootLayout": "src/app/layout.tsx",
+      "wraps": "all routes",
+      "renders": "AppShell (brand bar + calculator picker drawer)"
+    }
+  ],
+  "components": {
+    "appShell": [
+      {
+        "id": "AppShell",
+        "file": "src/components/AppShell.tsx",
+        "purpose": "Sticky 48px brand bar with hamburger that opens CalculatorPicker drawer. Wraps every route via layout.tsx.",
+        "dependsOn": ["CalculatorPicker"]
+      },
+      {
+        "id": "CalculatorPicker",
+        "file": "src/components/CalculatorPicker.tsx",
+        "purpose": "Drawer contents - tier-grouped calculator list with live/next/future status badges.",
+        "dependsOn": ["next/link", "lucide-react icons"]
+      }
+    ],
+    "navigationPatterns": [
+      {
+        "id": "TopTabNav",
+        "file": "src/components/TopTabNav.tsx",
+        "purpose": "Horizontal scrollable tab nav with active underline. Conditionally renders scroll chevrons + edge fade overlays + auto-scroll-active-tab-into-view when content overflows. Generic <TId extends string>.",
+        "usedBy": ["LightingCalculator (4 tabs)", "InUnitHvacCalculator (6 tabs)"]
+      },
+      {
+        "id": "SideTabNav",
+        "file": "src/components/SideTabNav.tsx",
+        "purpose": "Vertical 220px sticky left rail with collapsible workflow groups. Active group auto-expands. Used when tab count outgrows comfortable horizontal display. Generic <TId extends string>.",
+        "usedBy": ["DhwCalculator (13 tabs across 4 groups: Inputs / Evaluation / Documentation / Output)"]
+      }
+    ],
+    "calculatorShells": [
+      {
+        "id": "DhwCalculator",
+        "file": "src/components/DhwCalculator.tsx",
+        "domain": "dhw",
+        "lines": 321,
+        "purpose": "DHW shell — state + routing across grouped tabs. Hosts auto-size apply handlers (with type-guard predicates, no `as` casts), export handlers, share-link handler. Lazy-loads EnergyTab + CalculationsTab + MethodologyTab via next/dynamic.",
+        "hook": "useDhwInputs",
+        "pipeline": "src/lib/calc/pipeline.ts (runCalc)",
+        "tabCount": 13,
+        "tabIds": ["overview", "building", "demand", "current", "autosize", "sizing", "tech", "combi", "energy", "calculations", "methodology", "compliance", "reports", "compare"],
+        "topologyBranching": "Central systems show {sizing, tech}; in-unit systems show {combi}",
+        "lazyTabs": ["EnergyTab", "CalculationsTab", "MethodologyTab"]
+      },
+      {
+        "id": "LightingCalculator",
+        "file": "src/components/LightingCalculator.tsx",
+        "domain": "lighting",
+        "lines": 105,
+        "purpose": "Lighting shell — slim after the inlined-tabs extraction. All tabs live in tabs/lighting/. Lazy-loads EnergyTab + MethodologyTab via next/dynamic.",
+        "hook": "useLightingInputs",
+        "pipeline": "src/lib/lighting/pipeline.ts",
+        "tabCount": 4,
+        "tabIds": ["equipment", "energy", "retrofit", "methodology"],
+        "lazyTabs": ["EnergyTab", "MethodologyTab"]
+      },
+      {
+        "id": "InUnitHvacCalculator",
+        "file": "src/components/InUnitHvacCalculator.tsx",
+        "domain": "inunit_hvac",
+        "lines": 124,
+        "purpose": "In-unit HVAC shell — slim. All tabs extracted to tabs/inunit-hvac/. Lazy-loads EnergyTab + CalculationsTab + MethodologyTab via next/dynamic.",
+        "hook": "useInUnitHvacInputs",
+        "pipeline": "src/lib/inunit-hvac/pipeline.ts",
+        "tabCount": 6,
+        "tabIds": ["overview", "equipment", "energy", "retrofit", "calculations", "methodology"],
+        "lazyTabs": ["EnergyTab", "CalculationsTab", "MethodologyTab"]
+      }
+    ],
+    "tabs": [
+      {
+        "id": "DHW tabs",
+        "directory": "src/components/tabs/",
+        "files": ["OverviewTab.tsx", "BuildingTab.tsx", "DemandTab.tsx", "EquipmentTab.tsx", "EnergyTab.tsx", "AutoSizeTab.tsx", "SizingTab.tsx", "CurrentDesignTab.tsx", "CombiTab.tsx", "CalculationsTab.tsx (memoized, ~1400 lines — intentionally not split; lazy-loaded)", "MethodologyTab.tsx (memoized, lazy-loaded)", "ComplianceTab.tsx", "ReportsTab.tsx", "CompareTab.tsx"],
+        "notes": "DHW tabs at tabs/ root (legacy) - other calculators namespace under tabs/<domain>/. EnergyTab + CalculationsTab + MethodologyTab are memoized + lazy-loaded."
+      },
+      {
+        "id": "In-Unit HVAC tabs",
+        "directory": "src/components/tabs/inunit-hvac/",
+        "files": ["OverviewTab.tsx", "EquipmentTab.tsx", "EnergyTab.tsx (memoized, lazy-loaded)", "RetrofitTab.tsx", "CalculationsTab.tsx (memoized, lazy-loaded)", "MethodologyTab.tsx (memoized, lazy-loaded)"]
+      },
+      {
+        "id": "Lighting tabs",
+        "directory": "src/components/tabs/lighting/",
+        "files": ["EquipmentTab.tsx", "EnergyTab.tsx (memoized, lazy-loaded)", "RetrofitTab.tsx", "MethodologyTab.tsx (memoized, lazy-loaded)"],
+        "notes": "All four tabs now extracted as of the 2026-05-12 issue-remediation pass. Previously EnergyTab/EquipmentTab/RetrofitTab were inlined in LightingCalculator.tsx."
+      }
+    ],
+    "hooks": [
+      {
+        "id": "useDhwInputs",
+        "file": "src/hooks/useDhwInputs.ts",
+        "domain": "dhw",
+        "purpose": "DHW input state + URL persistence (?s= base64 share link) + localStorage write-through. setInputs merges DEFAULT_INPUTS for backwards compat with older saved reports.",
+        "storageKey": "dhw-calculator:inputs:v1",
+        "urlPersistence": true
+      },
+      {
+        "id": "useLightingInputs",
+        "file": "src/hooks/useLightingInputs.ts",
+        "domain": "lighting",
+        "purpose": "Lighting input state + localStorage write-through. No URL persistence (deferred).",
+        "storageKey": "lighting-calculator:inputs:v1",
+        "urlPersistence": false
+      },
+      {
+        "id": "useInUnitHvacInputs",
+        "file": "src/hooks/useInUnitHvacInputs.ts",
+        "domain": "inunit_hvac",
+        "purpose": "In-unit HVAC input state + localStorage write-through. Adds switchSystemType helper that pre-populates equipment defaults from chosen archetype.",
+        "storageKey": "inunit-hvac-calculator:inputs:v1",
+        "urlPersistence": false
+      }
+    ],
+    "pipelines": [
+      {
+        "id": "DHW pipeline",
+        "file": "src/lib/calc/pipeline.ts",
+        "domain": "dhw",
+        "function": "runCalc(input: DhwInputs): CalcResult",
+        "purity": "deterministic, no I/O, no Date.now, no Math.random",
+        "inputsType": "src/lib/calc/inputs.ts (DhwInputs)",
+        "resultType": "src/lib/calc/types.ts (CalcResult)",
+        "supportingModules": [
+          "src/lib/calc/demand.ts (ASHRAE/Hunter/Occupancy demand methods)",
+          "src/lib/calc/derived.ts (reporting efficiency resolution)",
+          "src/lib/sizing/auto-size.ts (3-philosophy auto sizing)",
+          "src/lib/sizing/cost-models.ts (lifecycle cost stacks)",
+          "src/lib/engineering/constants.ts (all DHW coefficients with source citations)",
+          "src/lib/engineering/climate.ts (climate zone derived values)",
+          "src/lib/engineering/hunter.ts (Hunter/ASPE method)",
+          "src/lib/engineering/hpwh.ts (HPWH source mode + COP modifiers)",
+          "src/lib/engineering/preheat.ts (solar + DWHR preheat)",
+          "src/lib/engineering/recirc.ts (recirc loop heat loss)",
+          "src/lib/engineering/system-types.ts (SYSTEM_TYPES metadata for 19 systems)"
+        ]
+      },
+      {
+        "id": "Lighting pipeline",
+        "file": "src/lib/lighting/pipeline.ts",
+        "domain": "lighting",
+        "function": "runCalc(input: LightingInputs): LightingResult",
+        "purity": "deterministic, no I/O",
+        "inputsType": "src/lib/lighting/inputs.ts",
+        "resultType": "src/lib/lighting/types.ts"
+      },
+      {
+        "id": "In-Unit HVAC pipeline",
+        "file": "src/lib/inunit-hvac/pipeline.ts",
+        "domain": "inunit_hvac",
+        "function": "runCalc(input: InUnitHvacInputs): InUnitHvacResult",
+        "purity": "deterministic, no I/O",
+        "inputsType": "src/lib/inunit-hvac/inputs.ts",
+        "resultType": "src/lib/inunit-hvac/types.ts",
+        "method": "EFLH (Equivalent Full-Load Hours) by climate zone with override option",
+        "notable": "Normalizes HDD/CDD monthly fraction tables to 1.0 so monthly rollup = annual within float tolerance"
+      }
+    ],
+    "sharedInfrastructure": [
+      {
+        "id": "Reports storage",
+        "file": "src/lib/reports/storage.ts",
+        "purpose": "Multi-domain SavedReport library backed by localStorage. v2 schema (domain discriminator + scenarios[] array). v1 records auto-migrate on read.",
+        "publicApi": ["saveScenarios", "saveReport (DHW convenience)", "listReports", "getReport", "updateReport", "deleteReport", "exportLibrary", "importLibrary", "primaryScenario", "findScenario"],
+        "storageKey": "dhw-calc.reports.v1"
+      },
+      {
+        "id": "Engine versions",
+        "file": "src/lib/version.ts",
+        "purpose": "Per-domain ENGINE_VERSIONS map. Bump per-domain when math could shift a numeric result by >0.5% on default inputs. Saved reports stamp version at save time; stale banner fires when current version mismatches.",
+        "current": {
+          "dhw": "0.5.1",
+          "lighting": "1.0.0",
+          "inunit_hvac": "1.1.0",
+          "rtus": "1.0.0 (stub)",
+          "boilers_chillers": "1.0.0 (stub)"
+        }
+      },
+      {
+        "id": "Chart palette",
+        "file": "src/lib/chart-palette.ts",
+        "purpose": "Single source of truth for recharts fill/stroke hex literals. Recharts passes colors to SVG attributes which do NOT resolve CSS var() - must hardcode hex. Exports typed maps per consumer (LIGHTING_CATEGORY_COLORS, INUNIT_HVAC_ENDUSE_COLORS, INUNIT_HVAC_ARCHETYPE_COLORS) + neutrals (CHART_GRID, CHART_AXIS)."
+      },
+      {
+        "id": "TabSkeleton",
+        "file": "src/components/ui/TabSkeleton.tsx",
+        "purpose": "Shared loader placeholder for lazy-loaded tabs. Renders a shimmer pattern with optional label. Used as the `loading` prop in every `next/dynamic` tab import."
+      },
+      {
+        "id": "Persistence",
+        "file": "src/lib/persistence.ts",
+        "purpose": "base64url encode/decode for DHW share links (?s= URL param)"
+      },
+      {
+        "id": "Utils",
+        "file": "src/lib/utils.ts",
+        "purpose": "Shared formatting helpers (cn, fmt, fmtUSD)"
+      }
+    ],
+    "retrofitPattern": [
+      {
+        "id": "RetrofitComparison",
+        "file": "src/components/RetrofitComparison.tsx",
+        "purpose": "Generic two-column current-vs-proposed widget. Generic <I, R>. Each calculator passes its own runCalc, extractMetrics (domain adapter), renderInputs, proposedPreset, onSave.",
+        "consumers": ["LightingCalculator (via tabs/lighting/RetrofitTab.tsx)", "InUnitHvacCalculator (via tabs/inunit-hvac/RetrofitTab.tsx)"]
+      },
+      {
+        "id": "SavingsStrip",
+        "file": "src/components/SavingsStrip.tsx",
+        "purpose": "Renders kWh / therms / $ / lb CO2 deltas + simple payback when capex provided. Therms kept separate from kWh intentionally (avoids fuel-switching conflation)."
+      }
+    ],
+    "exports": [
+      {
+        "directory": "src/lib/export/",
+        "files": [
+          {"file": "submittal.ts", "purpose": "PDF (jsPDF) + DOCX (docx) submittal package builder"},
+          {"file": "excel.ts", "purpose": "Excel workbook export (exceljs)"},
+          {"file": "csv.ts", "purpose": "CSV export (hand-rolled)"}
+        ],
+        "trigger": "Compliance tab buttons via DhwCalculator handlers",
+        "execution": "100% client-side, file-saver triggers browser download"
+      }
+    ],
+    "typographyHelpers": [
+      {
+        "id": "MethodologyHelpers",
+        "file": "src/components/methodology/Helpers.tsx",
+        "purpose": "Long-form prose primitives for Methodology tabs (large fonts, generous spacing). Exports Prose, H4, Code, Em, Formula, Table, Callout.",
+        "consumers": ["all 3 MethodologyTab files (DHW, lighting, inunit-hvac)"]
+      },
+      {
+        "id": "CalculationsHelpers",
+        "file": "src/components/calculations/Helpers.tsx",
+        "purpose": "Compact worked-example primitives for Calculations tabs (smaller fonts, tighter layout). Exports Step, Prose, Em, Formula, Sub, Result, KVList, Callout. NOT interchangeable with MethodologyHelpers despite name overlap.",
+        "consumers": ["DHW CalculationsTab", "inunit-hvac CalculationsTab"]
+      }
+    ],
+    "uiPrimitives": [
+      {"file": "src/components/ui/Card.tsx", "purpose": "Card / CardHeader / CardTitle / CardDescription - borderless by default, bordered when accent or bordered prop set"},
+      {"file": "src/components/ui/Field.tsx", "purpose": "Field / NumberInput / SelectInput - form field wrappers"},
+      {"file": "src/components/ui/Grid.tsx", "purpose": "Grid layout helper"},
+      {"file": "src/components/ui/MetricCard.tsx", "purpose": "Big metric value display (label + value + sub)"},
+      {"file": "src/components/ui/Flag.tsx", "purpose": "Compliance/advisory flag display"},
+      {"file": "src/components/ui/Section.tsx", "purpose": "Section wrapper"},
+      {"file": "src/components/ui/TabSkeleton.tsx", "purpose": "Shared loading skeleton for lazy-loaded tabs (next/dynamic loading prop)"}
+    ]
+  },
+  "dataFlows": [
+    {
+      "name": "User input -> live result",
+      "sequence": [
+        "User types/selects in a tab UI control",
+        "Tab calls update(key, value) from the hook",
+        "Hook updates state + writes to localStorage",
+        "Calculator shell's useMemo(runCalc, [inputs]) reruns",
+        "New result propagates to all OPEN tabs. Tabs wrapped in React.memo (EnergyTab/CalculationsTab/MethodologyTab) skip re-render when their props haven't changed by reference."
+      ]
+    },
+    {
+      "name": "Lazy tab load",
+      "sequence": [
+        "User clicks a tab (Energy, Calculations, Methodology)",
+        "Calculator shell renders {tab === '...' && <LazyTab .../>}",
+        "next/dynamic triggers chunk fetch on first activation",
+        "TabSkeleton placeholder renders during fetch (~30-100ms typical)",
+        "Chunk arrives -> React swaps in the real tab component -> hydration",
+        "Subsequent activations are instant (chunk cached)"
+      ]
+    },
+    {
+      "name": "Save scenario",
+      "sequence": [
+        "User clicks Save in Reports tab OR retrofit Save button",
+        "Component calls saveReport(...) [DHW convenience] or saveScenarios(name, domain, scenarios)",
+        "storage.ts stamps id + createdAt + updatedAt + engineVersion = ENGINE_VERSIONS[domain]",
+        "Persists to localStorage key 'dhw-calc.reports.v1' as a JSON map"
+      ]
+    },
+    {
+      "name": "Load saved report",
+      "sequence": [
+        "Reports tab calls listReports() -> reads localStorage map -> auto-migrates any v1 records via migrateRecord()",
+        "User clicks Load on a row",
+        "Component extracts primaryScenario(report).inputs and calls setInputs(...)",
+        "Hook merges with DEFAULT_INPUTS (backwards-compat for older reports lacking new fields)",
+        "useMemo reruns -> live result"
+      ]
+    },
+    {
+      "name": "Stale engine detection",
+      "sequence": [
+        "Reports/Compare tab reads report.engineVersion",
+        "Compares against ENGINE_VERSIONS[report.domain]",
+        "If mismatch -> renders 'Stale engine' banner",
+        "Loading and rerunning the saved inputs produces current-engine outputs (results object is regenerated, not loaded from the report)"
+      ]
+    },
+    {
+      "name": "Export submittal",
+      "sequence": [
+        "User clicks Export PDF/DOCX/Excel/CSV in Compliance tab",
+        "Handler in DhwCalculator delegates to exportPDF/exportDOCX/exportExcel/exportCSV in src/lib/export/",
+        "Export module accepts (inputs, result) and builds the file in-memory",
+        "file-saver triggers browser download"
+      ]
+    },
+    {
+      "name": "URL share link (DHW only)",
+      "sequence": [
+        "Compliance tab Share button calls shareURL() from useDhwInputs",
+        "encodeInputs(inputs) -> base64url JSON",
+        "Window prompt with URL containing ?s= param",
+        "Recipient pasting URL: useDhwInputs hydrates from ?s= via decodeInputs"
+      ]
+    },
+    {
+      "name": "Retrofit comparison",
+      "sequence": [
+        "RetrofitTab mounts RetrofitComparison<I, R>",
+        "Both current and proposed inputs run through the same runCalc",
+        "extractMetrics adapter converts each result to RetrofitMetrics {kwh, therms, cost, carbon}",
+        "SavingsStrip displays delta + simple payback if capex provided",
+        "On Save: saveScenarios(name, domain, [{label:'current',...},{label:'proposed',...}])"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "pure-pipelines",
+      "rule": "All runCalc functions must be deterministic with no external I/O, no Date.now, no Math.random",
+      "enforcedBy": "Calibration tests assert determinism on repeated calls"
+    },
+    {
+      "id": "calibration-must-pass",
+      "rule": "354 calibration tests must pass on every commit. A release cannot ship if engine drifts outside published reference bands.",
+      "enforcedBy": "CI on push/PR"
+    },
+    {
+      "id": "engine-version-bump",
+      "rule": "When engine math could shift a result by >0.5% on default inputs, bump ENGINE_VERSIONS[domain]",
+      "enforcedBy": "Convention - no automated check"
+    },
+    {
+      "id": "no-runtime-backend",
+      "rule": "App must remain a static export with no backend, no API routes, no server-side code paths",
+      "enforcedBy": "next.config.ts output:'export' fails build if API routes are added"
+    },
+    {
+      "id": "typescript-strict",
+      "rule": "tsconfig.json has strict mode enabled - no implicit any, no unchecked indexed access where typed otherwise",
+      "enforcedBy": "tsc --noEmit in CI"
+    },
+    {
+      "id": "chart-color-hex-only",
+      "rule": "Recharts fill/stroke values must be literal hex strings (SVG attrs don't resolve CSS var()). Source all chart colors from src/lib/chart-palette.ts.",
+      "enforcedBy": "Convention - no automated check"
+    },
+    {
+      "id": "calibration-comment-sources",
+      "rule": "Every coefficient in lib/engineering/constants.ts and every calibration assertion must cite its published source in surrounding comments",
+      "enforcedBy": "Convention - no automated check"
+    },
+    {
+      "id": "methodology-vs-calculations-helpers",
+      "rule": "Methodology helpers and Calculations helpers are NOT interchangeable despite name overlap. Import from src/components/methodology/Helpers for long-form tabs, src/components/calculations/Helpers for worked-example tabs.",
+      "enforcedBy": "Convention - no automated check"
+    },
+    {
+      "id": "compare-reads-system-specific",
+      "rule": "Compare tab must read monthly.monthlyAnnualCost / monthlyAnnualEnergy etc. (system-specific actuals), NOT cross-tech what-if fields (annualGasTherms / annualResistanceKWh / annualHPWHKWh_total) which produce identical values across systems",
+      "enforcedBy": "Calibration test asserts compare-tab fairness"
+    },
+    {
+      "id": "setInputs-merge-defaults",
+      "rule": "useDhwInputs.setInputs (and equivalents) must merge with DEFAULT_INPUTS so older saved reports lacking newly-added fields hydrate cleanly",
+      "enforcedBy": "Convention - tested implicitly via load-an-old-report flow"
+    },
+    {
+      "id": "heavy-tabs-lazy-loaded",
+      "rule": "EnergyTab (recharts dependency), CalculationsTab (large), MethodologyTab (long-form prose) MUST be lazy-loaded via next/dynamic in calculator shells with TabSkeleton as the loading placeholder.",
+      "enforcedBy": "Convention - no automated check; bundle analysis catches drift"
+    },
+    {
+      "id": "heavy-tabs-memoized",
+      "rule": "EnergyTab + CalculationsTab + MethodologyTab MUST be wrapped in React.memo so they skip re-renders on unrelated parent state updates.",
+      "enforcedBy": "Convention - no automated check"
+    },
+    {
+      "id": "docs-must-stay-current",
+      "rule": "README.md, architecture.json, architecture-map.html, CLAUDE.md, and docs/calibration.md MUST be updated in the same commit that introduces architectural changes (new routes, new calculators, schema changes, engine version bumps, nav pattern changes).",
+      "enforcedBy": "Convention - documented in CLAUDE.md 'Keeping the docs current' section; relies on reviewer attention + Claude/developer discipline"
+    }
+  ],
+  "architectureDecisions": [
+    {
+      "id": "ADR-001",
+      "title": "Static SPA, no backend",
+      "decision": "App is fully client-side, deployed as static HTML/JS to GitHub Pages. No backend, no database, no API routes.",
+      "rationale": "Engineering calculations are deterministic given inputs - no need for server state. Eliminates backend liability (no auth, no DB ops, no API endpoint surface), simplifies deployment (push -> GH Pages), enables offline-after-load usage.",
+      "tradeoff": "No cross-device sync, no centralized usage analytics, saved reports live only in one browser's localStorage. Mitigated by export/import buttons + URL share links (DHW)."
+    },
+    {
+      "id": "ADR-002",
+      "title": "Pure functional pipelines",
+      "decision": "Each calculator's runCalc is a pure deterministic function with zero external dependencies.",
+      "rationale": "Makes the math trivially testable (no mocking), makes calibration assertions sound (input X always produces output Y), keeps the React layer thin (useMemo + dependencies, no effect chains).",
+      "tradeoff": "All sizing options must be enumerated upfront in inputs (no progressive disclosure via async fetches)."
+    },
+    {
+      "id": "ADR-003",
+      "title": "Per-domain calculators with standardized anatomy",
+      "decision": "Each end use gets its own folder structure (lib/<domain>/inputs.ts + types.ts + pipeline.ts + calibration.test.ts; components/<X>Calculator.tsx + tabs/<domain>/*.tsx; hooks/use<X>Inputs.ts; app/<domain>/page.tsx)",
+      "rationale": "Adding a new end use becomes a recipe rather than ad-hoc work. New calculator authors copy the pattern, swap the engine, ship.",
+      "tradeoff": "Standardization tax - small repetition across calculators (extractMetrics adapters, useState patterns) intentionally kept per-domain rather than over-abstracted."
+    },
+    {
+      "id": "ADR-004",
+      "title": "Multi-domain SavedReport schema (v2)",
+      "decision": "Saved reports have a domain discriminator + scenarios[] array. One library holds all domains. Single-snapshot reports have 1 scenario; retrofit comparisons have 2.",
+      "rationale": "Cross-domain Reports + Compare features work without per-domain storage. Retrofit comparisons fit naturally as multi-scenario records.",
+      "migration": "v1 records (single inputs/results, no domain) auto-upgrade on read via migrateRecord() - non-destructive."
+    },
+    {
+      "id": "ADR-005",
+      "title": "Per-domain engine versioning",
+      "decision": "ENGINE_VERSIONS is a per-domain map, not a single global version.",
+      "rationale": "Changes to lighting math shouldn't trigger stale banners on DHW reports. Each domain evolves independently.",
+      "tradeoff": "Authors must remember to bump the right version when changing math."
+    },
+    {
+      "id": "ADR-006",
+      "title": "Calibration tests pin to published reference bands",
+      "decision": "Calibration tests assert ranges (e.g. 35-65% retrofit kWh reduction) rather than exact values, with comments citing the published source (ASHRAE/AHRI/NEEP/EPA/DOE).",
+      "rationale": "The references publish ranges (field data has variance). Asserting point values would fail spuriously; asserting ranges catches real drift while accommodating intentional refinements within the band.",
+      "tradeoff": "If math drifts within the band, calibration won't catch it. Use specific worked-example tests for that."
+    },
+    {
+      "id": "ADR-007",
+      "title": "Two navigation patterns (TopTabNav + SideTabNav)",
+      "decision": "Lighting (4 tabs) and in-unit HVAC (6 tabs) use TopTabNav; DHW (13 tabs) uses SideTabNav with collapsible workflow groups.",
+      "rationale": "DHW outgrew comfortable horizontal display. Vertical tree surfaces workflow stages (Inputs -> Evaluation -> Documentation -> Output) explicitly. Other calculators don't need the chrome.",
+      "tradeoff": "Inconsistency across calculators - mitigated by each calculator getting nav appropriate to its complexity."
+    },
+    {
+      "id": "ADR-008",
+      "title": "Chart palette centralized in JS (not CSS)",
+      "decision": "Chart fill/stroke hex literals live in src/lib/chart-palette.ts, NOT as CSS variables.",
+      "rationale": "Recharts passes colors to SVG attributes which don't resolve CSS var() references.",
+      "tradeoff": "Palette duplicated between JS (chart-palette.ts) and CSS (globals.css). Must update both when adjusting brand colors."
+    },
+    {
+      "id": "ADR-009",
+      "title": "Inline styles + CSS variables for non-chart UI",
+      "decision": "Components use style={{}} objects with var(--*) references rather than CSS classes or styled-components.",
+      "rationale": "Avoids build-time styling complexity for a small project. CSS variables in globals.css provide a centralized palette. Tailwind is available but used sparingly.",
+      "tradeoff": "Repeated style objects across components. Theme changes require touching many files."
+    },
+    {
+      "id": "ADR-010",
+      "title": "Generic RetrofitComparison widget",
+      "decision": "RetrofitComparison<I, R> is generic over the domain's input/result types. Each calculator supplies its own runCalc, extractMetrics, renderInputs, proposedPreset.",
+      "rationale": "Adding retrofit comparison to a new calculator costs one component + one 5-line extractMetrics adapter, not a rewrite of the comparison flow.",
+      "consumers": ["LightingCalculator (via tabs/lighting/RetrofitTab)", "InUnitHvacCalculator (via tabs/inunit-hvac/RetrofitTab)"]
+    },
+    {
+      "id": "ADR-011",
+      "title": "Lazy-load heavy tabs via next/dynamic",
+      "decision": "EnergyTab (recharts), CalculationsTab (large), MethodologyTab (long-form prose) are imported via next/dynamic with ssr:false in each calculator shell. TabSkeleton renders during chunk load.",
+      "rationale": "Recharts is ~80-100KB gzipped. Methodology + Calculations tabs are 800-1400 lines each. Eager imports paid all this on first paint of every calculator route. Lazy-loading defers until the user actually visits the relevant tab.",
+      "tradeoff": "Small skeleton flash on first tab visit (~30-100ms). Acceptable trade for the bundle-size win on initial load. Subsequent visits cached."
+    },
+    {
+      "id": "ADR-012",
+      "title": "React.memo on stable heavy tabs",
+      "decision": "EnergyTab + CalculationsTab + MethodologyTab are wrapped in React.memo.",
+      "rationale": "Calculator shells re-render on every input change. Without memo, these heavy tabs re-render too even when their props haven't changed by reference. With memo, they skip the work when the parent re-render didn't affect their props.",
+      "tradeoff": "Slightly more verbose component definitions (renamed to *Inner; exported via memo wrapper). Standard pattern, low overhead."
+    },
+    {
+      "id": "ADR-013",
+      "title": "DHW CalculationsTab intentionally not split",
+      "decision": "DHW CalculationsTab.tsx is ~1400 lines but is intentionally kept as one file rather than split per step.",
+      "rationale": "(1) It's lazy-loaded so doesn't impact first-paint bundle. (2) Helpers (Step/Formula/etc) are already extracted to calculations/Helpers.tsx. (3) The file represents the worked-example for ONE tab - splitting across files would scatter the math walkthrough where readers expect to follow it linearly. (4) Splitting would introduce refactor risk for marginal maintainability benefit.",
+      "tradeoff": "Large file is intimidating on first encounter. Mitigated by clear numbered Step boundaries and the in-app Methodology tab's source citations."
+    }
+  ],
+  "issues": [
+    {
+      "severity": "info",
+      "category": "documentation",
+      "title": "README.md kept current as of 2026-05-12 issue-remediation pass",
+      "status": "addressed",
+      "note": "Updated to reflect multi-end-use scope, current engine versions, and the documentation-sync convention."
+    },
+    {
+      "severity": "info",
+      "category": "persistence",
+      "title": "localStorage as sole persistence",
+      "status": "by-design",
+      "remediation": "ADR-001. Mitigated by export/import buttons + URL share links (DHW only)."
+    }
+  ],
+  "resolvedIssues": [
+    {
+      "originalSeverity": "medium",
+      "title": "Recharts bundle size in 290KB main chunk",
+      "resolution": "Lazy-loaded EnergyTab + CalculationsTab + MethodologyTab via next/dynamic. Recharts no longer in the initial bundle - only loaded on first tab visit. Saves ~80-100KB gzipped from first-paint cost."
+    },
+    {
+      "originalSeverity": "low",
+      "title": "LightingCalculator inlines its Equipment/Energy/Retrofit tabs",
+      "resolution": "All four tabs extracted to tabs/lighting/. LightingCalculator.tsx now ~105 lines (shell-only)."
+    },
+    {
+      "originalSeverity": "low",
+      "title": "React.memo only on Methodology tabs",
+      "resolution": "Added React.memo to EnergyTab + CalculationsTab in all 3 calculators."
+    },
+    {
+      "originalSeverity": "low",
+      "title": "No code splitting beyond Next route-level",
+      "resolution": "next/dynamic now used for heavy tabs (Energy/Calculations/Methodology) — splits each calculator route into chunks loaded on demand."
+    },
+    {
+      "originalSeverity": "low",
+      "title": "Some `as` casts in DhwCalculator",
+      "resolution": "Replaced with type-guard predicates (isGasTankSize, isGasTankType, isHPWHTankSize, isGasTanklessInput) at lines 79-93. applySizingRec narrows via type guards rather than casts."
+    },
+    {
+      "originalSeverity": "low",
+      "title": "DHW CalculationsTab is ~1400 lines",
+      "resolution": "Documented as intentional (ADR-013). File is lazy-loaded (no first-paint cost), helpers already extracted to calculations/Helpers.tsx, and represents one tab's worked example — splitting would scatter the linear math walkthrough."
+    },
+    {
+      "originalSeverity": "info",
+      "title": "README.md stale",
+      "resolution": "Rewrote 2026-05-12 to reflect multi-end-use scope."
+    }
+  ],
+  "testingStrategy": {
+    "framework": "vitest",
+    "environment": "jsdom",
+    "testCount": 354,
+    "categories": [
+      {
+        "name": "Engineering pipeline tests",
+        "files": ["src/lib/calc/pipeline.test.ts", "src/lib/calc/demand.test.ts", "src/lib/calc/all-systems.smoke.test.ts"],
+        "purpose": "Verify DHW pipeline produces correct outputs for all 19 system types and various input combinations"
+      },
+      {
+        "name": "Calibration tests",
+        "files": ["src/lib/calc/calibration.test.ts (DHW)", "src/lib/lighting/calibration.test.ts", "src/lib/inunit-hvac/calibration.test.ts"],
+        "purpose": "Pin engines to published reference bands (ASHRAE/AHRI/NEEP/EPA/DOE field data)"
+      },
+      {
+        "name": "Engineering module tests",
+        "files": ["src/lib/engineering/hpwh.test.ts", "src/lib/engineering/recirc.test.ts", "src/lib/engineering/constants.test.ts", "src/lib/engineering/climate.test.ts", "src/lib/engineering/hunter.test.ts"],
+        "purpose": "Unit-test the engineering modules (Hunter curves, HPWH source modes, climate derivations, recirc heat loss)"
+      },
+      {
+        "name": "Persistence tests",
+        "files": ["src/lib/persistence.test.ts", "src/lib/reports/storage.test.ts"],
+        "purpose": "Verify URL encode/decode + saved-report storage including v1->v2 migration"
+      }
+    ],
+    "gaps": [
+      "No React component tests (no React Testing Library setup)",
+      "No E2E tests (no Playwright/Cypress)",
+      "No visual regression tests"
+    ]
+  },
+  "deploymentPipeline": {
+    "trigger": "push to main",
+    "workflow": ".github/workflows/deploy.yml",
+    "steps": [
+      "checkout",
+      "npm install",
+      "npm run build (produces out/ directory)",
+      "Deploy out/ to gh-pages branch / GitHub Pages"
+    ],
+    "url": "https://kevinfolkes.github.io/dhw-calculator/",
+    "basePathHandling": "next.config.ts conditionally applies basePath='/dhw-calculator' when NODE_ENV==='production'"
+  },
+  "roadmap": {
+    "tier1Live": ["DHW", "Lighting", "In-Unit HVAC"],
+    "tier1Planned": ["Rooftop HVAC (packaged RTUs)", "Central Boilers + Chillers"],
+    "tier2Planned": ["Ventilation (common-area exhaust, ERV/HRV)", "Common-area appliances (laundry, elevators)", "Plug loads + in-unit refrigerators"],
+    "tier3Planned": ["Pool / hot tub heating", "Commercial kitchen (mixed-use)", "EV charging"]
+  }
+}

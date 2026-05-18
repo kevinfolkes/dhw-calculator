@@ -131,3 +131,28 @@ The header comment of `src/lib/engineering/constants.ts` lists the specific tabl
 - **In-unit HVAC monthly fractions are normalized inside the pipeline** so the published rounded HDD/CDD fraction tables sum to exactly 1.0. Annual = sum of monthly within float tolerance; calibration asserts this.
 - **DHW `gasTankUEFOverride` precedence**: non-zero override beats the size + atmospheric/condensing lookup. Out-of-range values (>1) fall back to lookup — guards typos like entering 90 instead of 0.90.
 - **`extractMetrics` is duplicated per-calculator on purpose** — same shape, different field names (`result.annualKWh` for lighting, `result.totalAnnualKWh` for in-unit HVAC). They're domain adapters, not duplication.
+- **Heavy tabs are lazy-loaded** via `next/dynamic` in each calculator shell (`EnergyTab` for the recharts cost; `CalculationsTab` for size; `MethodologyTab` for the long-form prose). Use the same pattern when adding new heavy tabs. The `TabSkeleton` component at `src/components/ui/TabSkeleton.tsx` is the shared loader placeholder.
+- **`EnergyTab` + `CalculationsTab` + `MethodologyTab` are wrapped in `React.memo`** so unrelated parent state updates don't trigger recharts re-paints or long-prose re-renders. Wrap new heavy tabs the same way (rename `function X` → `function XInner`, export `const X = memo(XInner)`).
+- **DHW `CalculationsTab.tsx` is ~1400 lines but intentionally not split** — it's lazy-loaded (no first-paint cost), uses shared helpers from `calculations/Helpers.tsx`, and represents the worked example for one tab. Splitting it would scatter the math walkthrough across files; the ergonomic boundary is the file itself.
+
+## Keeping the docs current — non-negotiable
+
+The following files are part of the architecture, not just commentary on it. They MUST be updated in the same commit that introduces an architectural change. "Architectural change" = anything that would alter the answers in `architecture.json` — adding a calculator, refactoring a shared module, changing the storage schema, bumping engine versions, changing nav patterns, adding/removing routes, changing the deployment target, etc.
+
+| File | What to keep current |
+|---|---|
+| `README.md` | "What's shipped" table (tab counts, engine versions), project layout if directory shape changed, engineering references when adding new authoritative sources |
+| `architecture.json` | Components list, dataFlows, constraints, architectureDecisions, issues, entry points, engineVersions in `entryPoints`, testCount |
+| `architecture-map.html` | The `ARCH` object at the top of the `<script>` block — same data as architecture.json but shaped for SVG rendering. Update the nodes / flows / decisions / issues arrays in lockstep. |
+| `CLAUDE.md` | This file. New architectural patterns, new conventions, new gotchas, new constraints. |
+| `docs/calibration.md` | When adding or tightening calibration assertions, or adding a new domain's calibration suite. |
+
+Convention checklist when touching `src/`:
+
+1. Did the routes change? → Update README "What's shipped", architecture.json `entryPoints`, architecture-map.html routes layer.
+2. Did a new calculator domain land? → Update README everywhere, architecture.json + architecture-map.html every section, CLAUDE.md per-calculator notes, version.ts ENGINE_VERSIONS.
+3. Did engine math change? → Bump `ENGINE_VERSIONS[domain]` (the >0.5% rule), update calibration test ranges if needed with a source citation, update docs/calibration.md.
+4. Did a shared module's contract change? → Update architecture.json `components.sharedInfrastructure`, architecture-map.html corresponding nodes/flows, CLAUDE.md if a new convention emerged.
+5. Did test count change? → Update README, architecture.json `testingStrategy.testCount`, architecture-map.html banner.
+
+When in doubt, regenerate `architecture.json` from scratch by walking the codebase and diff against the committed version — drift is easier to catch when the diff is fresh.

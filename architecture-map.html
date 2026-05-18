@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multifamily Building Energy Calculator — Architecture Map</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+<style>
+  body { font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace; }
+  .layer-rect { fill: rgba(248, 250, 252, 0.5); stroke: rgba(0,0,0,0.08); stroke-width: 1; }
+  .node-rect { cursor: pointer; transition: filter 150ms ease, transform 100ms ease; transform-box: fill-box; transform-origin: center; }
+  .node-rect:hover { filter: brightness(1.05) drop-shadow(0 4px 12px rgba(0,0,0,0.18)); transform: scale(1.02); }
+  .node-rect.selected { stroke: #0f172a; stroke-width: 2.5; filter: drop-shadow(0 0 0 4px rgba(15,23,42,0.15)); }
+  .node-text { pointer-events: none; font-weight: 600; fill: #0f172a; }
+  .node-sub { pointer-events: none; font-weight: 500; fill: #475569; font-size: 9.5px; }
+  .layer-label { fill: #64748b; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; pointer-events: none; }
+  .flow-line { stroke: #94a3b8; stroke-width: 1.2; fill: none; opacity: 0.55; transition: stroke 150ms, opacity 150ms, stroke-width 150ms; }
+  .flow-line.active { stroke: #2563eb; opacity: 1; stroke-width: 2.2; }
+  .flow-arrow { fill: #94a3b8; opacity: 0.55; transition: fill 150ms, opacity 150ms; }
+  .flow-arrow.active { fill: #2563eb; opacity: 1; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .scroll-shadow { background:
+    linear-gradient(to bottom, white 30%, rgba(255,255,255,0)) center top,
+    linear-gradient(to top, white 30%, rgba(255,255,255,0)) center bottom,
+    radial-gradient(farthest-side at 50% 0, rgba(15,23,42,0.12), transparent) center top,
+    radial-gradient(farthest-side at 50% 100%, rgba(15,23,42,0.12), transparent) center bottom;
+    background-repeat: no-repeat;
+    background-size: 100% 18px, 100% 18px, 100% 8px, 100% 8px;
+    background-attachment: local, local, scroll, scroll;
+  }
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before { content: "▸"; display: inline-block; margin-right: 6px; transition: transform 120ms; color: #64748b; }
+  details[open] > summary::before { transform: rotate(90deg); }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+<!-- ─── HEADER ─────────────────────────────────────────────── -->
+<header class="border-b border-slate-200 bg-white">
+  <div class="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white font-bold text-sm">⚡︎</div>
+      <div>
+        <div class="text-base font-bold tracking-tight">Multifamily Building Energy Calculator</div>
+        <div class="text-xs text-slate-500 mono">github.com/kevinfolkes/dhw-calculator · architecture map · generated 2026-05-12</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="btn-reset" class="px-3 py-1.5 text-xs font-semibold rounded-md border border-slate-300 hover:bg-slate-100 transition">Reset view</button>
+      <button id="btn-fit" class="px-3 py-1.5 text-xs font-semibold rounded-md border border-slate-300 hover:bg-slate-100 transition">Fit</button>
+      <div class="flex items-center border border-slate-300 rounded-md overflow-hidden">
+        <button id="btn-zoom-out" class="px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 transition">−</button>
+        <span id="zoom-pct" class="px-2 text-xs text-slate-500 mono">100%</span>
+        <button id="btn-zoom-in" class="px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 transition border-l border-slate-300">+</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ─── BANNER: project context ────────────────────────────── -->
+<div class="bg-slate-900 text-slate-100">
+  <div class="max-w-[1600px] mx-auto px-6 py-3 text-xs flex flex-wrap gap-x-6 gap-y-2">
+    <span><span class="text-slate-400">Stack</span> · Next.js 16 + React 19 + TypeScript 5 strict</span>
+    <span><span class="text-slate-400">Mode</span> · Static export · No backend · localStorage only · Lazy-loaded heavy tabs</span>
+    <span><span class="text-slate-400">Calculators</span> · DHW (v0.5.1) · Lighting (v1.0.0) · In-Unit HVAC (v1.1.0)</span>
+    <span><span class="text-slate-400">Tests</span> · 354 passing · calibration vs ASHRAE / AHRI / NEEP / EPA / DOE</span>
+    <span><span class="text-slate-400">Updated</span> · 2026-05-12 (issue-remediation pass)</span>
+  </div>
+</div>
+
+<!-- ─── MAIN ───────────────────────────────────────────────── -->
+<main class="max-w-[1600px] mx-auto px-6 py-6 grid grid-cols-12 gap-6">
+
+  <!-- LEFT: pan/zoom canvas -->
+  <section class="col-span-12 lg:col-span-8 xl:col-span-9 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm" style="height: 78vh;">
+    <div id="canvas-wrap" class="w-full h-full relative">
+      <svg id="arch-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 2200" preserveAspectRatio="xMidYMid meet" class="block w-full h-full">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="flow-arrow" />
+          </marker>
+          <marker id="arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="flow-arrow active" />
+          </marker>
+        </defs>
+        <g id="diagram"></g>
+      </svg>
+    </div>
+  </section>
+
+  <!-- RIGHT: details panel + legend -->
+  <aside class="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-4" style="max-height: 78vh;">
+
+    <!-- Details panel -->
+    <div id="details" class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 overflow-y-auto flex-1 scroll-shadow">
+      <div id="details-empty" class="text-slate-500 text-sm">
+        <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mb-2">Pick a component</div>
+        <p class="text-sm leading-relaxed">Click any box in the architecture map to inspect its file path, role, dependencies, and consumers. Hover over flows to highlight them.</p>
+        <hr class="my-4 border-slate-200" />
+        <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mb-2">Read in this order</div>
+        <ol class="space-y-1.5 text-sm text-slate-700 list-decimal list-inside">
+          <li>Routes (entry points)</li>
+          <li>Calculator shells</li>
+          <li>Pipelines (pure functions)</li>
+          <li>Storage + Exports (side effects)</li>
+        </ol>
+      </div>
+      <div id="details-content" class="hidden"></div>
+    </div>
+
+    <!-- Legend -->
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+      <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mb-2">Layers</div>
+      <div id="legend" class="grid grid-cols-2 gap-1.5 text-xs"></div>
+    </div>
+  </aside>
+</main>
+
+<!-- ─── Sections below the map ─────────────────────────────── -->
+<section class="max-w-[1600px] mx-auto px-6 pb-12 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+    <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mb-3">Tech stack</div>
+    <ul id="stack-list" class="text-sm space-y-1.5"></ul>
+  </div>
+
+  <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+    <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mb-3">Architectural decisions</div>
+    <div id="decisions-list" class="space-y-2 text-sm"></div>
+  </div>
+
+  <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+    <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mb-3">Open issues</div>
+    <div id="issues-list" class="space-y-2 text-sm"></div>
+    <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mt-5 mb-3">Recently resolved</div>
+    <div id="resolved-list" class="space-y-2 text-sm"></div>
+  </div>
+</section>
+
+<footer class="border-t border-slate-200 py-4 text-center text-xs text-slate-500 mono">
+  Architecture map · click nodes to inspect · scroll-wheel + drag to pan/zoom · companion <code>architecture.json</code> for AI-agent consumption
+</footer>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+ * ARCHITECTURE DATA — every node, every layer, every flow
+ * ══════════════════════════════════════════════════════════════════ */
+const ARCH = {
+  layers: [
+    { id: "routes",   label: "Next.js Routes (App Router · Static Export)", color: "#2563eb", bg: "#dbeafe" },
+    { id: "shell",    label: "App Shell & Navigation",                       color: "#7c3aed", bg: "#ede9fe" },
+    { id: "calcs",    label: "Calculator Shells (one per end-use)",          color: "#0891b2", bg: "#cffafe" },
+    { id: "tabs",     label: "Tab Components (UI per workflow stage)",       color: "#0d9488", bg: "#ccfbf1" },
+    { id: "hooks",    label: "State Hooks (input persistence)",              color: "#65a30d", bg: "#ecfccb" },
+    { id: "pipelines",label: "Pure Pipelines (deterministic runCalc)",       color: "#ea580c", bg: "#fed7aa" },
+    { id: "engine",   label: "Engineering Modules (DHW math)",               color: "#dc2626", bg: "#fecaca" },
+    { id: "shared",   label: "Shared Infrastructure (storage / export / palette)", color: "#52525b", bg: "#e4e4e7" }
+  ],
+
+  /* x positions are 0..1 fractions of layer width; layer auto-spans columns. */
+  nodes: [
+    // ─── ROUTES (layer 0) ──────────────────────────────
+    { id: "r-landing",    layer: "routes", x: 0.05, w: 130, label: "/",              sub: "page.tsx",            file: "src/app/page.tsx", purpose: "Landing — tile grid linking to each calculator + cross-domain views", icon: "🏠" },
+    { id: "r-dhw",        layer: "routes", x: 0.21, w: 130, label: "/dhw",           sub: "DhwCalculator",       file: "src/app/dhw/page.tsx", purpose: "DHW route — mounts DhwCalculator", icon: "💧" },
+    { id: "r-lighting",   layer: "routes", x: 0.36, w: 130, label: "/lighting",      sub: "LightingCalculator",  file: "src/app/lighting/page.tsx", purpose: "Lighting route — mounts LightingCalculator", icon: "💡" },
+    { id: "r-hvac",       layer: "routes", x: 0.51, w: 130, label: "/inunit-hvac",   sub: "InUnitHvacCalculator",file: "src/app/inunit-hvac/page.tsx", purpose: "In-unit HVAC route — mounts InUnitHvacCalculator", icon: "❄︎" },
+    { id: "r-reports",    layer: "routes", x: 0.67, w: 130, label: "/reports",       sub: "ReportsTab",          file: "src/app/reports/page.tsx", purpose: "Cross-domain saved reports library", icon: "📋" },
+    { id: "r-compare",    layer: "routes", x: 0.82, w: 130, label: "/compare",       sub: "CompareTab",          file: "src/app/compare/page.tsx", purpose: "Cross-domain side-by-side compare", icon: "⇄" },
+
+    // ─── APP SHELL (layer 1) ──────────────────────────
+    { id: "s-layout",     layer: "shell", x: 0.15, w: 180, label: "RootLayout",        sub: "layout.tsx", file: "src/app/layout.tsx", purpose: "Wraps every route. Mounts AppShell.", icon: "⌘" },
+    { id: "s-appshell",   layer: "shell", x: 0.42, w: 180, label: "AppShell",          sub: "brand bar + drawer", file: "src/components/AppShell.tsx", purpose: "Sticky 48px brand bar with hamburger that opens CalculatorPicker drawer." , icon: "⌘"},
+    { id: "s-picker",     layer: "shell", x: 0.71, w: 180, label: "CalculatorPicker",  sub: "drawer contents", file: "src/components/CalculatorPicker.tsx", purpose: "Tier-grouped calculator list with live/next/future badges", icon: "▤" },
+    { id: "s-toptab",     layer: "shell", x: 0.15, w: 180, y: 110, label: "TopTabNav",     sub: "horizontal nav", file: "src/components/TopTabNav.tsx", purpose: "Horizontal scrollable tab nav with chevrons + fade overlays + auto-scroll-active when content overflows. Used by Lighting + In-Unit HVAC.", icon: "⇆" },
+    { id: "s-sidetab",    layer: "shell", x: 0.42, w: 180, y: 110, label: "SideTabNav",    sub: "vertical tree",  file: "src/components/SideTabNav.tsx", purpose: "220px sticky vertical rail with collapsible workflow groups. Used by DHW (13 tabs).", icon: "▦" },
+    { id: "s-retrofit",   layer: "shell", x: 0.71, w: 180, y: 110, label: "RetrofitComparison", sub: "generic widget", file: "src/components/RetrofitComparison.tsx", purpose: "Generic <I,R> current-vs-proposed widget. Used by Lighting + In-Unit HVAC retrofit tabs.", icon: "⇄" },
+
+    // ─── CALCULATORS (layer 2) ────────────────────────
+    { id: "c-dhw",   layer: "calcs", x: 0.10, w: 240, label: "DhwCalculator",        sub: "13 tabs · SideTabNav", file: "src/components/DhwCalculator.tsx", purpose: "DHW shell — state + routing. Auto-size handlers use type-guard predicates (no `as` casts). Lazy-loads EnergyTab + CalculationsTab + MethodologyTab via next/dynamic.", icon: "💧" },
+    { id: "c-light", layer: "calcs", x: 0.39, w: 240, label: "LightingCalculator",   sub: "4 tabs · TopTabNav",   file: "src/components/LightingCalculator.tsx", purpose: "Lighting shell (~105 lines, shell-only). All tabs extracted to tabs/lighting/ as of 2026-05-12. Lazy-loads EnergyTab + MethodologyTab via next/dynamic.", icon: "💡" },
+    { id: "c-hvac",  layer: "calcs", x: 0.68, w: 240, label: "InUnitHvacCalculator", sub: "6 tabs · TopTabNav",   file: "src/components/InUnitHvacCalculator.tsx", purpose: "In-unit HVAC shell (~124 lines, shell-only). All tabs extracted. Lazy-loads EnergyTab + CalculationsTab + MethodologyTab via next/dynamic.", icon: "❄︎" },
+
+    // ─── TABS (layer 3) ───────────────────────────────
+    { id: "t-dhw",      layer: "tabs", x: 0.04, w: 260, label: "DHW tabs (14 files)",       sub: "src/components/tabs/", file: "src/components/tabs/", purpose: "Overview, Building, Demand, Sizing, Equipment, Combi, CurrentDesign, AutoSize, Energy, Calculations, Methodology, Compliance, Reports, Compare. Note: at tabs/ root (legacy) — new calculators namespace under tabs/<domain>/.", icon: "▤" },
+    { id: "t-light",    layer: "tabs", x: 0.37, w: 260, label: "Lighting tabs (4)",          sub: "tabs/lighting/",          file: "src/components/tabs/lighting/", purpose: "EquipmentTab, EnergyTab (memoized + lazy-loaded), RetrofitTab, MethodologyTab (memoized + lazy-loaded). All four tabs extracted as of 2026-05-12.", icon: "▤" },
+    { id: "t-hvac",     layer: "tabs", x: 0.70, w: 260, label: "In-Unit HVAC tabs (6)",     sub: "tabs/inunit-hvac/",  file: "src/components/tabs/inunit-hvac/", purpose: "OverviewTab, EquipmentTab, EnergyTab, RetrofitTab, CalculationsTab, MethodologyTab. The reference pattern for tab extraction.", icon: "▤" },
+    { id: "t-meth-help",layer: "tabs", x: 0.04, w: 260, y: 110, label: "Methodology helpers",sub: "long-form prose",   file: "src/components/methodology/Helpers.tsx", purpose: "Prose / H4 / Code / Em / Formula / Table / Callout — for long-form Methodology tabs. NOT interchangeable with Calculations helpers.", icon: "✎" },
+    { id: "t-calc-help",layer: "tabs", x: 0.37, w: 260, y: 110, label: "Calculations helpers",sub: "compact worked-example", file: "src/components/calculations/Helpers.tsx", purpose: "Step / Formula / Sub / Result / KVList / Callout / Prose / Em — for worked-example Calculations tabs.", icon: "Σ" },
+    { id: "t-ui",       layer: "tabs", x: 0.70, w: 260, y: 110, label: "UI primitives",     sub: "Card / Field / Grid / MetricCard / Flag / Section", file: "src/components/ui/", purpose: "Shared layout + input primitives used by every tab.", icon: "▢" },
+
+    // ─── HOOKS (layer 4) ──────────────────────────────
+    { id: "h-dhw",   layer: "hooks", x: 0.10, w: 240, label: "useDhwInputs",         sub: "localStorage + URL share link", file: "src/hooks/useDhwInputs.ts", purpose: "DHW input state. URL ?s= base64 share-link. setInputs merges DEFAULT_INPUTS for older-report compat.", icon: "♺" },
+    { id: "h-light", layer: "hooks", x: 0.39, w: 240, label: "useLightingInputs",    sub: "localStorage",                  file: "src/hooks/useLightingInputs.ts", purpose: "Lighting input state. No URL persistence (deferred).", icon: "♺" },
+    { id: "h-hvac",  layer: "hooks", x: 0.68, w: 240, label: "useInUnitHvacInputs",  sub: "localStorage + switchSystemType", file: "src/hooks/useInUnitHvacInputs.ts", purpose: "In-unit HVAC input state. switchSystemType helper pre-populates equipment defaults.", icon: "♺" },
+
+    // ─── PIPELINES (layer 5) ──────────────────────────
+    { id: "p-dhw",   layer: "pipelines", x: 0.10, w: 240, label: "DHW pipeline",          sub: "runCalc · 19 system types", file: "src/lib/calc/pipeline.ts", purpose: "Pure runCalc(DhwInputs): CalcResult. Routes through demand → sizing → preheat → recirc → monthly energy → cost → carbon. Deterministic, no I/O.", icon: "ƒ" },
+    { id: "p-light", layer: "pipelines", x: 0.39, w: 240, label: "Lighting pipeline",      sub: "runCalc · 7 categories",   file: "src/lib/lighting/pipeline.ts", purpose: "Pure runCalc(LightingInputs): LightingResult. Per-category connectedWatts × hours × control reductions. ASHRAE 90.1 §9.5.1 LPD compliance.", icon: "ƒ" },
+    { id: "p-hvac",  layer: "pipelines", x: 0.68, w: 240, label: "In-Unit HVAC pipeline",  sub: "runCalc · 8 archetypes",   file: "src/lib/inunit-hvac/pipeline.ts", purpose: "Pure runCalc(InUnitHvacInputs): InUnitHvacResult. EFLH method × climate zone. Normalizes HDD/CDD fractions so monthly = annual within float tolerance.", icon: "ƒ" },
+
+    // ─── ENGINEERING MODULES (DHW only — layer 6) ─────
+    { id: "e-constants",  layer: "engine", x: 0.02, w: 180, label: "constants.ts",   sub: "all DHW coefficients", file: "src/lib/engineering/constants.ts", purpose: "Single source of truth for DHW coefficients — every value cites its ASHRAE / AHRI / EPA / NOAA source.", icon: "≣" },
+    { id: "e-climate",    layer: "engine", x: 0.16, w: 180, label: "climate.ts",     sub: "climate-derived values", file: "src/lib/engineering/climate.ts", purpose: "Inlet water temp, HDD65, design DB per climate zone.", icon: "❄︎" },
+    { id: "e-hunter",     layer: "engine", x: 0.30, w: 180, label: "hunter.ts",      sub: "Modified Hunter / ASPE", file: "src/lib/engineering/hunter.ts", purpose: "ASPE / Modified Hunter peak-flow curves keyed to WSFU.", icon: "△" },
+    { id: "e-hpwh",       layer: "engine", x: 0.44, w: 180, label: "hpwh.ts",        sub: "HPWH source + COP",      file: "src/lib/engineering/hpwh.ts", purpose: "HPWH source modes (ambient / sealed mech room / ground loop / wastewater) and COP modifiers per refrigerant + tier.", icon: "♨︎" },
+    { id: "e-preheat",    layer: "engine", x: 0.58, w: 180, label: "preheat.ts",     sub: "solar + DWHR lift",      file: "src/lib/engineering/preheat.ts", purpose: "Solar fraction + drain-water heat recovery lift applied to effective inlet temp.", icon: "☀" },
+    { id: "e-recirc",     layer: "engine", x: 0.72, w: 180, label: "recirc.ts",      sub: "recirc loop heat loss",  file: "src/lib/engineering/recirc.ts", purpose: "Recirc-loop pipe heat loss with insulation + ambient + control mode.", icon: "♺" },
+    { id: "e-systype",    layer: "engine", x: 0.86, w: 180, label: "system-types.ts",sub: "SYSTEM_TYPES (19)",      file: "src/lib/engineering/system-types.ts", purpose: "Metadata for all 19 DHW system types (label, topology, tech, hasSpaceHeating, description, color, archetypes).", icon: "❖" },
+    { id: "e-sizing",     layer: "engine", x: 0.30, w: 180, y: 110, label: "sizing/auto-size.ts", sub: "3-philosophy auto-sizer", file: "src/lib/sizing/auto-size.ts", purpose: "Minimum / recommended / 15-yr-lifecycle auto-sizing across system types.", icon: "⤤" },
+    { id: "e-cost",       layer: "engine", x: 0.44, w: 180, y: 110, label: "sizing/cost-models.ts", sub: "lifecycle cost stacks", file: "src/lib/sizing/cost-models.ts", purpose: "Lifecycle cost models (capex + energy + maintenance over 15 yr).", icon: "$" },
+    { id: "e-derived",    layer: "engine", x: 0.58, w: 180, y: 110, label: "calc/derived.ts", sub: "reporting efficiency", file: "src/lib/calc/derived.ts", purpose: "resolveReportingEfficiency — turns the result + inputs into the single efficiency value shown on Compare/Exports.", icon: "⌗" },
+    { id: "e-demand",     layer: "engine", x: 0.72, w: 180, y: 110, label: "calc/demand.ts", sub: "demand method selector", file: "src/lib/calc/demand.ts", purpose: "ASHRAE / Hunter / Occupancy demand methods + fixture-mix utilities.", icon: "≋" },
+
+    // ─── SHARED INFRA (layer 7) ───────────────────────
+    { id: "sh-storage",  layer: "shared", x: 0.02, w: 200, label: "reports/storage.ts", sub: "multi-domain v2 schema",  file: "src/lib/reports/storage.ts", purpose: "SavedReport library backed by localStorage. v2 schema (domain discriminator + scenarios[]). v1 records auto-migrate on read.", icon: "▣" },
+    { id: "sh-version",  layer: "shared", x: 0.18, w: 160, label: "version.ts",        sub: "ENGINE_VERSIONS map",     file: "src/lib/version.ts", purpose: "Per-domain engine versions (dhw 0.5.1, lighting 1.0.0, inunit_hvac 1.1.0). Bump per-domain when math shifts >0.5% on defaults.", icon: "#" },
+    { id: "sh-palette",  layer: "shared", x: 0.32, w: 200, label: "chart-palette.ts",  sub: "recharts hex literals",   file: "src/lib/chart-palette.ts", purpose: "Centralized chart fill/stroke hex (CSS vars don't resolve in SVG attrs). Typed maps per consumer.", icon: "▰" },
+    { id: "sh-persist",  layer: "shared", x: 0.48, w: 160, label: "persistence.ts",    sub: "base64url encode/decode", file: "src/lib/persistence.ts", purpose: "Used by useDhwInputs for ?s= URL share links.", icon: "🔗" },
+    { id: "sh-utils",    layer: "shared", x: 0.62, w: 160, label: "utils.ts",          sub: "cn / fmt / fmtUSD",       file: "src/lib/utils.ts", purpose: "Shared formatting helpers.", icon: "⌬" },
+    { id: "sh-savings",  layer: "shared", x: 0.76, w: 200, label: "SavingsStrip",      sub: "delta + simple payback",   file: "src/components/SavingsStrip.tsx", purpose: "kWh / therms / $ / CO2 deltas + simple payback. Therms separated from kWh on purpose.", icon: "Δ" },
+    { id: "sh-pdf",      layer: "shared", x: 0.02, w: 200, y: 110, label: "export/submittal.ts", sub: "PDF + DOCX",     file: "src/lib/export/submittal.ts", purpose: "jsPDF + docx submittal package builder.", icon: "↓" },
+    { id: "sh-xlsx",     layer: "shared", x: 0.24, w: 160, y: 110, label: "export/excel.ts",     sub: "exceljs",        file: "src/lib/export/excel.ts", purpose: "Excel workbook export.", icon: "↓" },
+    { id: "sh-csv",      layer: "shared", x: 0.40, w: 160, y: 110, label: "export/csv.ts",       sub: "hand-rolled",     file: "src/lib/export/csv.ts", purpose: "CSV export.", icon: "↓" },
+    { id: "sh-skeleton", layer: "shared", x: 0.18, w: 200, y: 220, label: "TabSkeleton",         sub: "shared lazy-load loader", file: "src/components/ui/TabSkeleton.tsx", purpose: "Loading placeholder rendered by next/dynamic while lazy tab chunks fetch. Shimmer skeleton with optional label. Used by every heavy tab import.", icon: "▱" },
+    { id: "sh-localstorage", layer: "shared", x: 0.60, w: 240, y: 110, label: "🗄 localStorage (browser)", sub: "ONLY persistence layer", file: "(browser API)", purpose: "Sole persistence. Keys: dhw-calc.reports.v1 (reports), dhw-calculator:inputs:v1 / lighting-calculator:inputs:v1 / inunit-hvac-calculator:inputs:v1 (live inputs).", icon: "🗄" }
+  ],
+
+  /* Flows — `from` → `to`. Label optional. */
+  flows: [
+    // Routes → calculator shells
+    { from: "r-dhw",      to: "c-dhw",   label: "mounts" },
+    { from: "r-lighting", to: "c-light", label: "mounts" },
+    { from: "r-hvac",     to: "c-hvac",  label: "mounts" },
+    { from: "r-landing",  to: "s-picker", label: "tiles" },
+    { from: "r-reports",  to: "sh-storage", label: "lists" },
+    { from: "r-compare",  to: "sh-storage", label: "reads" },
+
+    // Layout wraps everything
+    { from: "s-layout",   to: "s-appshell" },
+    { from: "s-appshell", to: "s-picker" },
+
+    // Calculator shells use navigation patterns
+    { from: "c-dhw",   to: "s-sidetab" },
+    { from: "c-light", to: "s-toptab" },
+    { from: "c-hvac",  to: "s-toptab" },
+
+    // Calculator shells mount tabs
+    { from: "c-dhw",   to: "t-dhw" },
+    { from: "c-light", to: "t-light" },
+    { from: "c-hvac",  to: "t-hvac" },
+
+    // Tabs use shared typography helpers
+    { from: "t-dhw",   to: "t-calc-help" },
+    { from: "t-hvac",  to: "t-calc-help" },
+    { from: "t-dhw",   to: "t-meth-help" },
+    { from: "t-light", to: "t-meth-help" },
+    { from: "t-hvac",  to: "t-meth-help" },
+    { from: "t-dhw",   to: "t-ui" },
+    { from: "t-light", to: "t-ui" },
+    { from: "t-hvac",  to: "t-ui" },
+
+    // Retrofit widget used by relevant tabs
+    { from: "t-light", to: "s-retrofit" },
+    { from: "t-hvac",  to: "s-retrofit" },
+    { from: "s-retrofit", to: "sh-savings" },
+
+    // Calculator shells read hooks
+    { from: "c-dhw",   to: "h-dhw" },
+    { from: "c-light", to: "h-light" },
+    { from: "c-hvac",  to: "h-hvac" },
+
+    // Calculator shells run pipelines
+    { from: "c-dhw",   to: "p-dhw",   label: "useMemo runCalc" },
+    { from: "c-light", to: "p-light", label: "useMemo runCalc" },
+    { from: "c-hvac",  to: "p-hvac",  label: "useMemo runCalc" },
+
+    // DHW pipeline depends on every engineering module
+    { from: "p-dhw", to: "e-constants" },
+    { from: "p-dhw", to: "e-climate" },
+    { from: "p-dhw", to: "e-hunter" },
+    { from: "p-dhw", to: "e-hpwh" },
+    { from: "p-dhw", to: "e-preheat" },
+    { from: "p-dhw", to: "e-recirc" },
+    { from: "p-dhw", to: "e-systype" },
+    { from: "p-dhw", to: "e-sizing" },
+    { from: "p-dhw", to: "e-cost" },
+    { from: "p-dhw", to: "e-derived" },
+    { from: "p-dhw", to: "e-demand" },
+
+    // Storage flows
+    { from: "h-dhw",   to: "sh-localstorage", label: "write" },
+    { from: "h-light", to: "sh-localstorage", label: "write" },
+    { from: "h-hvac",  to: "sh-localstorage", label: "write" },
+    { from: "sh-storage", to: "sh-localstorage" },
+    { from: "sh-storage", to: "sh-version", label: "stamps" },
+
+    // Hooks read persistence helper
+    { from: "h-dhw", to: "sh-persist", label: "?s= share" },
+
+    // Exports (driven by DHW shell)
+    { from: "c-dhw", to: "sh-pdf", label: "Export PDF/DOCX" },
+    { from: "c-dhw", to: "sh-xlsx", label: "Export XLSX" },
+    { from: "c-dhw", to: "sh-csv", label: "Export CSV" },
+
+    // Chart palette consumed by chart-using tabs
+    { from: "t-hvac",  to: "sh-palette" },
+    { from: "t-dhw",   to: "sh-palette" },
+    { from: "c-light", to: "sh-palette" },
+  ],
+
+  techStack: [
+    "Next.js 16.2.2 (App Router, Turbopack)",
+    "React 19.2.4",
+    "TypeScript ^5 (strict)",
+    "Tailwind v4 (used sparingly)",
+    "recharts ^3.8.1 (~80–100KB gzipped)",
+    "lucide-react ^0.460.0 (tree-shaken icons)",
+    "jspdf ^2.5.2 + jspdf-autotable",
+    "docx ^9.5.0",
+    "exceljs 4.4.0",
+    "file-saver ^2.0.5",
+    "vitest ^2.1.9 (jsdom)",
+    "eslint ^9 + eslint-config-next 16.2.2",
+    "Static export to GitHub Pages"
+  ],
+
+  decisions: [
+    { id: "ADR-001", title: "Static SPA, no backend",          body: "100% client-side. No API, no DB. Saved reports live in localStorage." },
+    { id: "ADR-002", title: "Pure functional pipelines",        body: "runCalc deterministic, no I/O. Makes calibration tests sound." },
+    { id: "ADR-003", title: "Standardized per-domain anatomy",  body: "lib/<x>/(inputs|types|pipeline|calibration.test).ts + components/<X>Calculator.tsx + tabs/<x>/* + hooks/use<X>Inputs.ts + app/<x>/page.tsx." },
+    { id: "ADR-004", title: "Multi-domain SavedReport v2",      body: "Domain discriminator + scenarios[] array. v1 auto-migrates on read." },
+    { id: "ADR-005", title: "Per-domain engine versions",       body: "ENGINE_VERSIONS map, not a single global version. Bump per-domain >0.5% rule." },
+    { id: "ADR-006", title: "Calibration asserts ranges",       body: "Tests pin engines to published reference bands, not point values — references publish ranges." },
+    { id: "ADR-007", title: "Two nav patterns",                  body: "TopTabNav for lighting + in-unit HVAC; SideTabNav for DHW (13 tabs)." },
+    { id: "ADR-008", title: "Chart palette in JS, not CSS",     body: "Recharts SVG attrs don't resolve var(). Hex literals in chart-palette.ts." },
+    { id: "ADR-010", title: "Generic RetrofitComparison",        body: "Generic <I,R> widget. New calculator costs one extractMetrics adapter." },
+    { id: "ADR-011", title: "Lazy-load heavy tabs (next/dynamic)", body: "EnergyTab / CalculationsTab / MethodologyTab are imported via next/dynamic with TabSkeleton fallback — defers recharts + long prose off first paint." },
+    { id: "ADR-012", title: "React.memo on stable heavy tabs",    body: "EnergyTab + CalculationsTab + MethodologyTab wrapped in memo so parent re-renders skip them when props haven't changed by reference." },
+    { id: "ADR-013", title: "DHW CalculationsTab intentionally not split", body: "1400 lines but lazy-loaded (no first-paint cost), helpers extracted, represents one tab's linear math walkthrough. Splitting would scatter the worked example." }
+  ],
+
+  issues: [
+    { severity: "info", title: "Docs sync convention (README / arch.json / arch-map.html / CLAUDE.md) is enforced by reviewer attention", remediation: "Documented in CLAUDE.md 'Keeping the docs current' section. When touching src/, walk the checklist in CLAUDE.md to confirm every doc is updated in the same commit." },
+    { severity: "info", title: "localStorage as sole persistence", remediation: "By design (ADR-001). Mitigated by export/import + URL share links (DHW only)." }
+  ],
+
+  resolvedIssues: [
+    { title: "Recharts bundle size", resolution: "Lazy-loaded heavy tabs via next/dynamic — recharts no longer in first-paint bundle." },
+    { title: "LightingCalculator inlines its tabs", resolution: "All four tabs extracted to tabs/lighting/. Shell now ~105 lines." },
+    { title: "React.memo only on Methodology tabs", resolution: "memo added to EnergyTab + CalculationsTab in all 3 calculators." },
+    { title: "No code splitting beyond Next route-level", resolution: "next/dynamic now used for heavy tabs in every calculator." },
+    { title: "Some `as` casts in DhwCalculator", resolution: "Replaced with type-guard predicates (isGasTankSize, isGasTankType, etc.) — see lines 79-93." },
+    { title: "DHW CalculationsTab is 1400+ lines", resolution: "Documented as intentional (ADR-013) — lazy-loaded so no first-paint cost; splitting would scatter the linear math walkthrough." },
+    { title: "README.md described project as DHW-only", resolution: "Rewrote 2026-05-12 with multi-end-use scope, current engine versions, doc-sync convention." }
+  ]
+};
+
+/* ════════════════════════════════════════════════════════════════════
+ * RENDER — build the SVG diagram from ARCH
+ * ══════════════════════════════════════════════════════════════════ */
+const SVG_NS = "http://www.w3.org/2000/svg";
+const PAD_X = 40;
+const LAYER_HEADER_H = 32;
+const NODE_H = 70;
+const NODE_GAP_Y = 18;
+const LAYER_PAD_BOTTOM = 22;
+const SVG_W = 1400;
+
+function buildDiagram() {
+  const root = document.getElementById("diagram");
+  const innerW = SVG_W - PAD_X * 2;
+
+  // Compute per-layer height based on max y offset of nodes inside.
+  const layerMeta = ARCH.layers.map((l) => {
+    const nodes = ARCH.nodes.filter((n) => n.layer === l.id);
+    const rows = nodes.reduce((m, n) => Math.max(m, (n.y || 0)), 0);
+    const h = LAYER_HEADER_H + (rows > 0 ? 110 + NODE_H : NODE_H) + LAYER_PAD_BOTTOM;
+    return { ...l, height: h, nodes };
+  });
+
+  // Lay out layers vertically.
+  let y = 24;
+  for (const lm of layerMeta) {
+    lm.yOffset = y;
+    y += lm.height + 28;
+  }
+  // Resize SVG viewBox to fit.
+  document.getElementById("arch-svg").setAttribute("viewBox", `0 0 ${SVG_W} ${y + 24}`);
+
+  // Render flows first (under nodes).
+  const nodePositions = {};
+  for (const lm of layerMeta) {
+    for (const n of lm.nodes) {
+      const nx = PAD_X + Math.round(n.x * innerW);
+      const ny = lm.yOffset + LAYER_HEADER_H + (n.y || 0);
+      nodePositions[n.id] = { x: nx, y: ny, w: n.w, h: NODE_H, layerColor: lm.color, layerBg: lm.bg };
+    }
+  }
+
+  // Flows
+  for (const f of ARCH.flows) {
+    const a = nodePositions[f.from], b = nodePositions[f.to];
+    if (!a || !b) continue;
+    const ax = a.x + a.w / 2;
+    const ay = a.y + a.h;
+    const bx = b.x + b.w / 2;
+    const by = b.y;
+    // S-curve when going down; straight curve when going across
+    const dy = Math.abs(by - ay);
+    const c1y = ay + Math.max(20, dy * 0.4);
+    const c2y = by - Math.max(20, dy * 0.4);
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", `M ${ax} ${ay} C ${ax} ${c1y} ${bx} ${c2y} ${bx} ${by}`);
+    path.setAttribute("class", "flow-line");
+    path.setAttribute("marker-end", "url(#arrow)");
+    path.dataset.from = f.from;
+    path.dataset.to = f.to;
+    if (f.label) path.dataset.label = f.label;
+    root.appendChild(path);
+  }
+
+  // Layer backgrounds + labels + nodes
+  for (const lm of layerMeta) {
+    // Background
+    const lr = document.createElementNS(SVG_NS, "rect");
+    lr.setAttribute("x", PAD_X - 12);
+    lr.setAttribute("y", lm.yOffset);
+    lr.setAttribute("width", innerW + 24);
+    lr.setAttribute("height", lm.height);
+    lr.setAttribute("rx", 10);
+    lr.setAttribute("fill", lm.bg + "55"); // semi-transparent
+    lr.setAttribute("stroke", lm.color + "33");
+    lr.setAttribute("stroke-width", 1);
+    root.appendChild(lr);
+
+    // Layer label
+    const lt = document.createElementNS(SVG_NS, "text");
+    lt.setAttribute("x", PAD_X);
+    lt.setAttribute("y", lm.yOffset + 18);
+    lt.setAttribute("class", "layer-label");
+    lt.setAttribute("fill", lm.color);
+    lt.textContent = lm.label;
+    root.appendChild(lt);
+
+    // Nodes
+    for (const n of lm.nodes) {
+      const pos = nodePositions[n.id];
+      const g = document.createElementNS(SVG_NS, "g");
+      g.dataset.nodeId = n.id;
+      g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+
+      const r = document.createElementNS(SVG_NS, "rect");
+      r.setAttribute("x", 0);
+      r.setAttribute("y", 0);
+      r.setAttribute("width", n.w);
+      r.setAttribute("height", NODE_H);
+      r.setAttribute("rx", 8);
+      r.setAttribute("fill", "#fff");
+      r.setAttribute("stroke", lm.color);
+      r.setAttribute("stroke-width", 1.5);
+      r.setAttribute("class", "node-rect");
+      g.appendChild(r);
+
+      // Accent bar at top
+      const bar = document.createElementNS(SVG_NS, "rect");
+      bar.setAttribute("x", 0);
+      bar.setAttribute("y", 0);
+      bar.setAttribute("width", n.w);
+      bar.setAttribute("height", 4);
+      bar.setAttribute("rx", 8);
+      bar.setAttribute("fill", lm.color);
+      bar.setAttribute("pointer-events", "none");
+      g.appendChild(bar);
+
+      // Icon
+      const ic = document.createElementNS(SVG_NS, "text");
+      ic.setAttribute("x", 12);
+      ic.setAttribute("y", 28);
+      ic.setAttribute("font-size", 14);
+      ic.setAttribute("pointer-events", "none");
+      ic.textContent = n.icon || "•";
+      g.appendChild(ic);
+
+      // Label
+      const t = document.createElementNS(SVG_NS, "text");
+      t.setAttribute("x", 34);
+      t.setAttribute("y", 28);
+      t.setAttribute("class", "node-text");
+      t.setAttribute("font-size", 12.5);
+      t.textContent = n.label;
+      g.appendChild(t);
+
+      // Sub
+      const st = document.createElementNS(SVG_NS, "text");
+      st.setAttribute("x", 12);
+      st.setAttribute("y", 48);
+      st.setAttribute("class", "node-sub");
+      st.textContent = n.sub;
+      g.appendChild(st);
+
+      // File path
+      const fp = document.createElementNS(SVG_NS, "text");
+      fp.setAttribute("x", 12);
+      fp.setAttribute("y", 62);
+      fp.setAttribute("class", "node-sub");
+      fp.setAttribute("font-size", 9);
+      fp.setAttribute("font-family", "JetBrains Mono, monospace");
+      fp.setAttribute("fill", "#94a3b8");
+      fp.textContent = n.file;
+      g.appendChild(fp);
+
+      g.addEventListener("click", (e) => { e.stopPropagation(); selectNode(n.id); });
+      g.addEventListener("mouseenter", () => highlightFlows(n.id, true));
+      g.addEventListener("mouseleave", () => highlightFlows(n.id, false));
+
+      root.appendChild(g);
+    }
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * INTERACTIVITY — selection, highlight, panel
+ * ══════════════════════════════════════════════════════════════════ */
+function highlightFlows(nodeId, on) {
+  document.querySelectorAll(".flow-line").forEach((p) => {
+    const matches = p.dataset.from === nodeId || p.dataset.to === nodeId;
+    if (matches) {
+      p.classList.toggle("active", on);
+      p.setAttribute("marker-end", on ? "url(#arrow-active)" : "url(#arrow)");
+    }
+  });
+}
+
+function selectNode(id) {
+  document.querySelectorAll(".node-rect.selected").forEach((r) => r.classList.remove("selected"));
+  const g = document.querySelector(`g[data-node-id="${id}"]`);
+  if (!g) return;
+  g.querySelector(".node-rect").classList.add("selected");
+
+  const node = ARCH.nodes.find((n) => n.id === id);
+  if (!node) return;
+  const layer = ARCH.layers.find((l) => l.id === node.layer);
+
+  const incoming = ARCH.flows.filter((f) => f.to === id).map((f) => ({ ...f, peer: ARCH.nodes.find((n) => n.id === f.from) })).filter((f) => f.peer);
+  const outgoing = ARCH.flows.filter((f) => f.from === id).map((f) => ({ ...f, peer: ARCH.nodes.find((n) => n.id === f.to) })).filter((f) => f.peer);
+
+  document.getElementById("details-empty").classList.add("hidden");
+  const c = document.getElementById("details-content");
+  c.classList.remove("hidden");
+  c.innerHTML = `
+    <div class="flex items-start gap-3 mb-3">
+      <div class="w-10 h-10 rounded-lg flex items-center justify-center text-lg" style="background:${layer.bg}; color:${layer.color};">${node.icon || "•"}</div>
+      <div class="flex-1 min-w-0">
+        <div class="text-base font-bold leading-tight">${escapeHTML(node.label)}</div>
+        <div class="text-xs text-slate-500 mono mt-0.5 break-all">${escapeHTML(node.file)}</div>
+      </div>
+    </div>
+    <div class="inline-block text-xs font-semibold px-2 py-0.5 rounded uppercase tracking-wider mb-3" style="background:${layer.bg}; color:${layer.color};">${escapeHTML(layer.label.split('(')[0].trim())}</div>
+    <p class="text-sm leading-relaxed text-slate-700 mb-4">${escapeHTML(node.purpose || "")}</p>
+
+    ${outgoing.length ? `
+      <div class="mt-4">
+        <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mb-1.5">Depends on / writes to</div>
+        <ul class="space-y-1">
+          ${outgoing.map((f) => `
+            <li class="text-sm">
+              <button class="text-blue-700 hover:underline text-left" data-jump="${f.peer.id}">
+                ${escapeHTML(f.peer.label)}
+              </button>
+              ${f.label ? `<span class="text-xs text-slate-500 mono">— ${escapeHTML(f.label)}</span>` : ""}
+            </li>
+          `).join("")}
+        </ul>
+      </div>` : ""}
+
+    ${incoming.length ? `
+      <div class="mt-4">
+        <div class="text-xs uppercase tracking-wider font-bold text-slate-400 mb-1.5">Used by / written by</div>
+        <ul class="space-y-1">
+          ${incoming.map((f) => `
+            <li class="text-sm">
+              <button class="text-blue-700 hover:underline text-left" data-jump="${f.peer.id}">
+                ${escapeHTML(f.peer.label)}
+              </button>
+              ${f.label ? `<span class="text-xs text-slate-500 mono">— ${escapeHTML(f.label)}</span>` : ""}
+            </li>
+          `).join("")}
+        </ul>
+      </div>` : ""}
+  `;
+  c.querySelectorAll("[data-jump]").forEach((b) => {
+    b.addEventListener("click", () => selectNode(b.dataset.jump));
+  });
+}
+
+function escapeHTML(s) {
+  return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * LEGEND + side panels
+ * ══════════════════════════════════════════════════════════════════ */
+function buildLegend() {
+  const root = document.getElementById("legend");
+  root.innerHTML = ARCH.layers.map((l) => `
+    <div class="flex items-center gap-1.5">
+      <span class="legend-swatch" style="background:${l.color}"></span>
+      <span class="truncate" title="${escapeHTML(l.label)}">${escapeHTML(l.label.split('(')[0].trim())}</span>
+    </div>
+  `).join("");
+}
+
+function buildStackList() {
+  document.getElementById("stack-list").innerHTML = ARCH.techStack.map((s) => `<li class="text-slate-700 leading-snug">• ${escapeHTML(s)}</li>`).join("");
+}
+
+function buildDecisions() {
+  document.getElementById("decisions-list").innerHTML = ARCH.decisions.map((d) => `
+    <details class="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition">
+      <summary class="font-semibold text-slate-800 text-sm">
+        <span class="mono text-xs text-slate-500 mr-2">${d.id}</span>${escapeHTML(d.title)}
+      </summary>
+      <p class="mt-2 text-sm text-slate-600 leading-relaxed pl-4">${escapeHTML(d.body)}</p>
+    </details>
+  `).join("");
+}
+
+function buildIssues() {
+  const sevColors = {
+    high:   { bg: "#fecaca", text: "#991b1b", label: "HIGH" },
+    medium: { bg: "#fed7aa", text: "#9a3412", label: "MED" },
+    low:    { bg: "#fef9c3", text: "#854d0e", label: "LOW" },
+    info:   { bg: "#dbeafe", text: "#1e40af", label: "INFO" }
+  };
+  document.getElementById("issues-list").innerHTML = ARCH.issues.map((i) => {
+    const s = sevColors[i.severity] || sevColors.info;
+    return `
+      <details class="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition">
+        <summary class="font-semibold text-slate-800 text-sm flex items-start gap-2">
+          <span class="px-1.5 py-0.5 text-[10px] font-bold rounded shrink-0 mt-0.5" style="background:${s.bg}; color:${s.text};">${s.label}</span>
+          <span class="flex-1">${escapeHTML(i.title)}</span>
+        </summary>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed pl-4">${escapeHTML(i.remediation)}</p>
+      </details>
+    `;
+  }).join("");
+
+  const resolved = ARCH.resolvedIssues || [];
+  document.getElementById("resolved-list").innerHTML = resolved.map((r) => `
+    <details class="border border-emerald-100 bg-emerald-50/30 rounded-lg p-3 hover:bg-emerald-50 transition">
+      <summary class="font-semibold text-slate-700 text-sm flex items-start gap-2">
+        <span class="px-1.5 py-0.5 text-[10px] font-bold rounded shrink-0 mt-0.5" style="background:#d1fae5; color:#065f46;">DONE</span>
+        <span class="flex-1">${escapeHTML(r.title)}</span>
+      </summary>
+      <p class="mt-2 text-sm text-slate-600 leading-relaxed pl-4">${escapeHTML(r.resolution)}</p>
+    </details>
+  `).join("");
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * PAN / ZOOM via svg-pan-zoom
+ * ══════════════════════════════════════════════════════════════════ */
+let panZoom;
+function initPanZoom() {
+  panZoom = svgPanZoom("#arch-svg", {
+    panEnabled: true,
+    controlIconsEnabled: false,
+    zoomEnabled: true,
+    dblClickZoomEnabled: false,
+    mouseWheelZoomEnabled: true,
+    preventMouseEventsDefault: true,
+    fit: true,
+    center: true,
+    minZoom: 0.4,
+    maxZoom: 4,
+    zoomScaleSensitivity: 0.25,
+    onZoom: () => { document.getElementById("zoom-pct").textContent = Math.round(panZoom.getZoom() * 100) + "%"; }
+  });
+
+  document.getElementById("btn-zoom-in").addEventListener("click", () => panZoom.zoomIn());
+  document.getElementById("btn-zoom-out").addEventListener("click", () => panZoom.zoomOut());
+  document.getElementById("btn-fit").addEventListener("click", () => { panZoom.fit(); panZoom.center(); });
+  document.getElementById("btn-reset").addEventListener("click", () => { panZoom.resetZoom(); panZoom.resetPan(); });
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * BOOT
+ * ══════════════════════════════════════════════════════════════════ */
+document.addEventListener("DOMContentLoaded", () => {
+  buildDiagram();
+  buildLegend();
+  buildStackList();
+  buildDecisions();
+  buildIssues();
+  initPanZoom();
+});
+</script>
+
+</body>
+</html>

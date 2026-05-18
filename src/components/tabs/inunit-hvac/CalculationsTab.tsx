@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Card } from "@/components/ui/Card";
 import {
   Callout,
@@ -41,7 +42,7 @@ interface Props {
  * without leaving the app. The Methodology tab documents the formulas in
  * abstract; this tab shows them plugged in.
  */
-export function CalculationsTab({ inputs, result }: Props) {
+function CalculationsTabInner({ inputs, result }: Props) {
   const sysSpec = INUNIT_HVAC_SYSTEM_SPECS[inputs.systemType];
   const archetype = archetypeForClimateZone(inputs.climateZone);
   const climate = CLIMATE_DESIGN[inputs.climateZone];
@@ -432,3 +433,6 @@ const tdCellNum: React.CSSProperties = {
   textAlign: "right",
   fontVariantNumeric: "tabular-nums",
 };
+
+/** Memoized — only re-renders when inputs / result change by reference. */
+export const CalculationsTab = memo(CalculationsTabInner);
